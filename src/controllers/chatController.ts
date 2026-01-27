@@ -355,17 +355,19 @@ async function processLeaveRequest(
   );
 
   if (overlapCheck.hasOverlap) {
+    const leave = overlapCheck.overlappingLeaves[0];
     // Return overlap information instead of creating
     return {
       success: false,
       hasOverlap: true,
+      message: `⚠️ You already have ${leave.leaveType} leave from ${leave.startDate} to ${leave.endDate}.\n\nPlease adjust your new request or update the existing leave first.`,
       overlappingLeaves: overlapCheck.overlappingLeaves
     };
   }
 
   const payload = {
     employeeName,
-    employeeEmail: null,
+    employeeEmail,
     employeeId,
     startDate: details.startDate,
     endDate,
@@ -931,6 +933,35 @@ const chatController = async (req: Request, res: Response) => {
           showButtons: true,
           pendingRequest: { type: 'wfh', details: updatedDetails }
         });
+      }
+
+      case 'leave_balance': {
+        const requestedType = analysis.entities?.leaveType || extractLeaveType(message);
+
+        if (requestedType && requestedType !== 'UNKNOWN') {
+          const balance = await salesforceService.getLeaveBalance(finalEmail, requestedType);
+          return res.json({
+            reply: `📅 **Your ${balance.leaveType} Leave Balance:**\n\n` +
+              `• **Total Entitlement**: ${balance.total} days\n` +
+              `• **Used/Pending**: ${balance.used} days\n` +
+              `• **Remaining**: **${balance.remaining} days**\n\n` +
+              `Would you like to apply for ${balance.leaveType.toLowerCase()} leave now?`,
+            intent: 'leave_balance_info',
+            timestamp: new Date().toISOString()
+          });
+        } else {
+          const balances = await salesforceService.getAllLeaveBalances(finalEmail);
+          let reply = `📋 **Your Leave Balance Summary (2026):**\n\n`;
+          balances.forEach(b => {
+            reply += `• **${b.leaveType}**: ${b.remaining} days left (out of ${b.total})\n`;
+          });
+          reply += `\nHow can I help you further?`;
+          return res.json({
+            reply,
+            intent: 'leave_balance_summary',
+            timestamp: new Date().toISOString()
+          });
+        }
       }
 
       case 'view_requests': {

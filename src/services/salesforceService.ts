@@ -244,7 +244,7 @@ export class SalesforceService {
             const result = await this.conn.sobject('Leave_Request__c').create(recordData);
 
             if (!result.success) {
-                const errors = result.errors ? result.errors.join(', ') : 'Unknown creation error';
+                const errors = result.errors ? (Array.isArray(result.errors) ? result.errors.join(', ') : JSON.stringify(result.errors)) : 'Unknown creation error';
                 throw new Error(`Salesforce creation failed: ${errors}`);
             }
 
@@ -416,7 +416,7 @@ export class SalesforceService {
                 recordData.Employee__c = employeeId;
             }
 
-            const result = await this.conn.sobject('WFH__c').create(recordData);
+            const result = await this.conn.sobject('WFH_Request__c').create(recordData);
 
             console.log('✅ Real Salesforce WFH Record Created:', result.id);
             console.log('📋 Manager approval flow should be triggered from WFH__c automations');
@@ -495,7 +495,7 @@ export class SalesforceService {
 
             console.log(`🔍 Querying Salesforce for record: ${recordId}`);
 
-            const candidateObjects = ['Leave_Request__c', 'WFH__c'];
+            const candidateObjects = ['Leave_Request__c', 'WFH_Request__c']; // Changed WFH__c to WFH_Request__c
 
             for (const objectName of candidateObjects) {
                 try {
@@ -527,12 +527,60 @@ export class SalesforceService {
     }
 
     async getLeaveBalance(employeeEmail: string | undefined, leaveType: string): Promise<{ total: number; used: number; remaining: number; leaveType: string }> {
+        const key = (leaveType || 'CASUAL').toUpperCase();
         if (this.demoMode) {
-            return this.getMockLeaveBalance(leaveType);
+            return this.getMockLeaveBalance(key);
         }
 
-        // TODO: Replace with real Salesforce integration
-        return this.getMockLeaveBalance(leaveType);
+        // In Live Mode, we should query Salesforce for used leaves of this type
+        try {
+            if (!this.isAuthenticated) await this.authenticate();
+
+            const sfType = this.mapLeaveTypeToSf(key);
+            const escapedEmail = (employeeEmail || '').toLowerCase().replace(/'/g, "\\'");
+
+            // Query for summary of approved/pending leaves of this type
+            const soql = `SELECT SUM(Duration_Days__c) usedDays FROM Leave_Request__c 
+                         WHERE Employee_Email__c = '${escapedEmail}' 
+                         AND Leave_Type__c = '${sfType}' 
+                         AND Status__c IN ('Approved', 'Pending')`;
+
+            const result = await this.conn.query(soql);
+            const used = (result.records[0] as any).usedDays || 0;
+
+            const entitlement = this.mockLeaveBalances[key] || { total: 12 };
+            const total = entitlement.total;
+            const remaining = Math.max(0, total - used);
+
+            return {
+                total,
+                used,
+                remaining,
+                leaveType: key
+            };
+        } catch (error) {
+            console.error('Error fetching real leave balance:', error);
+            return this.getMockLeaveBalance(key);
+        }
+    }
+
+    async getAllLeaveBalances(employeeEmail: string | undefined): Promise<any[]> {
+        const types = Object.keys(this.mockLeaveBalances);
+        const balances = await Promise.all(
+            types.map(type => this.getLeaveBalance(employeeEmail, type))
+        );
+        return balances;
+    }
+
+    private mapLeaveTypeToSf(key: string): string {
+        const map: Record<string, string> = {
+            'ANNUAL': 'Annual Leave',
+            'SICK': 'Sick Leave',
+            'CASUAL': 'Casual Leave',
+            'MATERNITY': 'Maternity Leave',
+            'PATERNITY': 'Paternity Leave'
+        };
+        return map[key] || 'Casual Leave';
     }
 
     async checkLeaveBalance(employeeEmail: string | undefined, leaveType: string, requestedDays: number): Promise<{ total: number; used: number; remaining: number; leaveType: string; isAvailable: boolean }> {
@@ -560,11 +608,23 @@ export class SalesforceService {
                 throw new Error('Salesforce authentication failed');
             }
 
-            // First, update the Status__c field
-            await this.conn.sobject('Leave_Request__c').update({
-                Id: recordId,
-                Status__c: status
-            });
+            // First, attempt to update Status__c on Leave_Request__c
+            try {
+                await this.conn.sobject('Leave_Request__c').update({
+                    Id: recordId,
+                    Status__c: status
+                });
+            } catch (leaveError: any) {
+                // If it's not a Leave_Request__c, try WFH_Request__c
+                if (this.isMissingRecordError(leaveError)) {
+                    await this.conn.sobject('WFH_Request__c').update({
+                        Id: recordId,
+                        Status__c: status
+                    });
+                } else {
+                    throw leaveError;
+                }
+            }
 
             console.log(`✅ Salesforce record ${recordId} updated to ${status}`);
 

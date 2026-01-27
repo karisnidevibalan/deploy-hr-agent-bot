@@ -175,7 +175,7 @@ Provide exceptional, personalized HR support by understanding employee needs, an
     // 4. Enhanced leave detection
     const hasLeaveKeyword = lowerMessage.includes('leave') || lowerMessage.includes('holiday');
     if (hasLeaveKeyword) {
-      if (['balance', 'remaining', 'left', 'available', 'check leave', 'status'].some(k => lowerMessage.includes(k))) return 'leave_balance';
+      if (['balance', 'remaining', 'left', 'available', 'check leave', 'status', 'how many', 'count'].some(k => lowerMessage.includes(k))) return 'leave_balance';
       if (['policy', 'what is', 'explain', 'rules'].some(k => lowerMessage.includes(k))) return 'leave_policy';
 
       const applicationIndicators = ['apply', 'want', 'need', 'take', 'request', 'submit', 'tomorrow', 'next week'];
