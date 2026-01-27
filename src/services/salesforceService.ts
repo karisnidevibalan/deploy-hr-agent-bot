@@ -602,9 +602,11 @@ export class SalesforceService {
         if (!email) return 'Unknown';
 
         if (this.demoMode) {
-            // Mock gender: For demo, let's say anyone with 'mary' in email is Female, others Male
-            if (email.toLowerCase().includes('mary')) return 'Female';
-            return 'Male';
+            // Improve demo mode gender detection
+            const lower = email.toLowerCase();
+            if (lower.includes('mary') || lower.includes('jane') || lower.includes('karis')) return 'Female';
+            if (lower.includes('john') || lower.includes('bob')) return 'Male';
+            return 'Male'; // Default to Male for testing if email is provided
         }
 
         try {

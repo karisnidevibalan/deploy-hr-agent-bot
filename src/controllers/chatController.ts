@@ -1028,18 +1028,28 @@ const chatController = async (req: Request, res: Response) => {
         } else {
           const balances = await salesforceService.getAllLeaveBalances(finalEmail);
           let filteredBalances = balances;
+          let showGenderNote = false;
 
           if (userGender === 'Male') {
             filteredBalances = balances.filter(b => b.leaveType !== 'MATERNITY');
           } else if (userGender === 'Female') {
             filteredBalances = balances.filter(b => b.leaveType !== 'PATERNITY');
+          } else {
+            // Unknown gender: hide both for a clean summary, or if user asked for "all"
+            filteredBalances = balances.filter(b => b.leaveType !== 'MATERNITY' && b.leaveType !== 'PATERNITY');
+            showGenderNote = true;
           }
 
           let reply = `📋 **Your Leave Balance Summary (2026):**\n\n`;
           filteredBalances.forEach(b => {
             reply += `• **${b.leaveType}**: ${b.remaining} days left (out of ${b.total})\n`;
           });
-          reply += `\nHow can I help you further?`;
+
+          if (showGenderNote) {
+            reply += `\n*Note: Maternity/Paternity balances are hidden as your gender profile is incomplete.*`;
+          }
+
+          reply += `\n\nHow can I help you further?`;
           return res.json({
             reply,
             intent: 'leave_balance_summary',
