@@ -121,6 +121,7 @@ import entityExtractor from '../utils/entityExtractor';
 import { SalesforceService } from '../services/salesforceService';
 import { AiService } from '../services/aiService';
 import { Request, Response } from 'express';
+import holidaysJson from '../data/holidays.json';
 
 const salesforceService = new SalesforceService();
 const aiService = new AiService();
@@ -299,15 +300,7 @@ async function processLeaveRequest(
   ssoContext?: { finalEmail?: string; finalName?: string }
 ): Promise<any> {
   // Block leave creation if any date is a holiday
-  const holidaysPath = path.join(process.cwd(), 'src/data/holidays.json');
-  let holidaysList: any[] = [];
-  try {
-    const holidaysData = fs.readFileSync(holidaysPath, 'utf-8');
-    const holidaysJson = JSON.parse(holidaysData);
-    holidaysList = holidaysJson.holidays || [];
-  } catch (e) {
-    console.error('Failed to load holidays.json:', e);
-  }
+  const holidaysList = holidaysJson.holidays || [];
   const leaveDates = [];
   const start = new Date(details.startDate!);
   const end = new Date(details.endDate || details.startDate!);
@@ -489,16 +482,8 @@ Please provide corrected dates to continue editing your leave request.`,
 
   if (newDetails && newDetails.startDate && newDetails.leaveType) {
     // Block confirmation if the requested date is a holiday (move BEFORE confirmation)
-    const holidaysPath = path.join(process.cwd(), 'src/data/holidays.json');
     newDetails.reason = newDetails.reason || 'Personal';
-    let holidaysList: any[] = [];
-    try {
-      const holidaysData = fs.readFileSync(holidaysPath, 'utf-8');
-      const holidaysJson = JSON.parse(holidaysData);
-      holidaysList = holidaysJson.holidays || [];
-    } catch (e) {
-      console.error('Failed to load holidays.json:', e);
-    }
+    const holidaysList = holidaysJson.holidays || [];
     const leaveDates = [];
     const start = new Date(newDetails.startDate);
     const end = new Date(newDetails.endDate || newDetails.startDate);

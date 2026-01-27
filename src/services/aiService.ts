@@ -7,11 +7,10 @@ const groq = new Groq({
   apiKey: process.env.GROQ_API_KEY
 });
 
-// Load HR policy data
-const leavePolicy = JSON.parse(fs.readFileSync(path.join(__dirname, '../data/leavePolicy.json'), 'utf8'));
-const holidays = JSON.parse(fs.readFileSync(path.join(__dirname, '../data/holidays.json'), 'utf8'));
-const wfhPolicy = JSON.parse(fs.readFileSync(path.join(__dirname, '../data/wfhPolicy.json'), 'utf8'));
-const reimbursementPolicy = JSON.parse(fs.readFileSync(path.join(__dirname, '../data/reimbursement-policy.json'), 'utf8'));
+import leavePolicy from "../data/leavePolicy.json";
+import holidays from "../data/holidays.json";
+import wfhPolicy from "../data/wfhPolicy.json";
+import reimbursementPolicy from "../data/reimbursement-policy.json";
 
 export type IntentResult = {
   intent: string;
