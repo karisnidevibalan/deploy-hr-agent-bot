@@ -5,7 +5,7 @@
   "rewrites": [
     {
       "source": "/api/(.*)",
-      "destination": "https://YOUR_RENDER_SERVICE_URL_HERE/api/$1"
+      "destination": "https://deploy-hr-agent-bot.onrender.com/api/$1"
     },
     {
       "source": "/(.*)",
