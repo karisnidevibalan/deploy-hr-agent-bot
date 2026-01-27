@@ -857,8 +857,21 @@ const chatController = async (req: Request, res: Response) => {
           updatedDetails.step = 'type';
           contextManager.setAwaitingLeaveDetails(sessionId, updatedDetails);
           const inferred = entities.leaveType || extractLeaveType(message);
+
+          // Determine options based on gender
+          let options = "Annual, Sick, Casual";
+          const context = contextManager.getContext(sessionId);
+          if (!context.gender) {
+            const gender = await salesforceService.getUserGender(finalEmail);
+            contextManager.updateContext(sessionId, { gender });
+          }
+          const userGender = contextManager.getContext(sessionId).gender;
+
+          if (userGender === 'Female') options += ", Maternity";
+          if (userGender === 'Male') options += ", Paternity";
+
           return res.json({
-            reply: `🏖️ ${inferred ? `Potentially ${inferred} leave. ` : ''}**What type of leave is this?**\n(Options: Annual, Sick, Casual)`,
+            reply: `🏖️ ${inferred ? `Potentially ${inferred} leave. ` : ''}**What type of leave is this?**\n(Options: ${options})`,
             intent: 'ask_leave_type'
           });
         }
@@ -866,13 +879,49 @@ const chatController = async (req: Request, res: Response) => {
         if (currentStep === 'type') {
           const type = entities.leaveType || extractLeaveType(message);
           if (type) {
+            // Eligibility Check
+            const userGender = contextManager.getContext(sessionId).gender;
+            if (type === 'MATERNITY' && userGender === 'Male') {
+              return res.json({ reply: "❌ Maternity leave is only available for female employees. Please choose a different type (Annual, Sick, Casual).", intent: 'eligibility_error' });
+            }
+            if (type === 'PATERNITY' && userGender === 'Female') {
+              return res.json({ reply: "❌ Paternity leave is only available for male employees. Please choose a different type (Annual, Sick, Casual).", intent: 'eligibility_error' });
+            }
+            if ((type === 'MATERNITY' || type === 'PATERNITY') && userGender === 'Unknown') {
+              contextManager.updateContext(sessionId, { awaitingLeaveDetails: { ...updatedDetails, leaveType: type, step: 'clarify_gender' } });
+              return res.json({
+                reply: `I see you're applying for ${type.toLowerCase()} leave. To proceed, I need to know: Are you applying as a Male or Female employee?`,
+                intent: 'ask_gender_clarification'
+              });
+            }
+
             updatedDetails.leaveType = type;
             updatedDetails.step = 'confirm';
           } else {
             return res.json({
-              reply: `🏖️ Please specify: Annual, Sick, or Casual.`,
+              reply: `🏖️ Please specify a valid leave type.`,
               intent: 'ask_leave_type_retry'
             });
+          }
+        }
+
+        if (currentStep === 'clarify_gender') {
+          const lowerMsg = message.toLowerCase();
+          let gender: 'Male' | 'Female' | 'Unknown' = 'Unknown';
+          if (lowerMsg.includes('female') || lowerMsg.includes('woman') || lowerMsg.includes('lady')) gender = 'Female';
+          else if (lowerMsg.includes('male') || lowerMsg.includes('man') || lowerMsg.includes('gentleman')) gender = 'Male';
+
+          if (gender !== 'Unknown') {
+            contextManager.updateContext(sessionId, { gender });
+            const type = updatedDetails.leaveType;
+            if ((type === 'MATERNITY' && gender === 'Male') || (type === 'PATERNITY' && gender === 'Female')) {
+              updatedDetails.step = 'type';
+              contextManager.setAwaitingLeaveDetails(sessionId, updatedDetails);
+              return res.json({ reply: `❌ I see. However, ${type.toLowerCase()} leave is not available for ${gender.toLowerCase()} employees. Please choose a different type.`, intent: 'eligibility_error' });
+            }
+            updatedDetails.step = 'confirm';
+          } else {
+            return res.json({ reply: "I'm sorry, I didn't catch that. To proceed, please specify if you are a Male or Female employee.", intent: 'ask_gender_clarification_retry' });
           }
         }
 
@@ -949,7 +998,23 @@ const chatController = async (req: Request, res: Response) => {
       case 'leave_balance': {
         const requestedType = analysis.entities?.leaveType || extractLeaveType(message);
 
+        // Ensure gender is known
+        const context = contextManager.getContext(sessionId);
+        if (!context.gender) {
+          const gender = await salesforceService.getUserGender(finalEmail);
+          contextManager.updateContext(sessionId, { gender });
+        }
+        const userGender = contextManager.getContext(sessionId).gender;
+
         if (requestedType && requestedType !== 'UNKNOWN') {
+          // Check eligibility for direct balance request
+          if (requestedType === 'MATERNITY' && userGender === 'Male') {
+            return res.json({ reply: "Maternity leave is only available for female employees.", intent: 'eligibility_error' });
+          }
+          if (requestedType === 'PATERNITY' && userGender === 'Female') {
+            return res.json({ reply: "Paternity leave is only available for male employees.", intent: 'eligibility_error' });
+          }
+
           const balance = await salesforceService.getLeaveBalance(finalEmail, requestedType);
           return res.json({
             reply: `📅 **Your ${balance.leaveType} Leave Balance:**\n\n` +
@@ -962,8 +1027,16 @@ const chatController = async (req: Request, res: Response) => {
           });
         } else {
           const balances = await salesforceService.getAllLeaveBalances(finalEmail);
+          let filteredBalances = balances;
+
+          if (userGender === 'Male') {
+            filteredBalances = balances.filter(b => b.leaveType !== 'MATERNITY');
+          } else if (userGender === 'Female') {
+            filteredBalances = balances.filter(b => b.leaveType !== 'PATERNITY');
+          }
+
           let reply = `📋 **Your Leave Balance Summary (2026):**\n\n`;
-          balances.forEach(b => {
+          filteredBalances.forEach(b => {
             reply += `• **${b.leaveType}**: ${b.remaining} days left (out of ${b.total})\n`;
           });
           reply += `\nHow can I help you further?`;

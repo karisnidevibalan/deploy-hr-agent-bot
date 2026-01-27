@@ -40,6 +40,7 @@ export interface SessionContext {
     message: string;
     intent: string;
   }>;
+  gender?: 'Male' | 'Female' | 'Unknown';
 }
 
 class ContextManager {

@@ -268,11 +268,12 @@
             chat.scrollTop = chat.scrollHeight;
         }
 
-        function addConfirmationButtons() {
+        function addConfirmationButtons(intent) {
             removeConfirmationButtons();
             const chat = document.getElementById('chatContainer');
             const div = document.createElement('div');
-            div.className = 'quick-replies confirmation-buttons';
+            div.className = 'confirmation-buttons';
+            div.dataset.intent = intent; // Store intent for edit form logic
             div.style.marginTop = '10px';
             div.innerHTML = `
                 <button onclick="sendChatRequest({message:'yes'})" style="background:#22c55e;color:white;border:none;padding:6px 14px;border-radius:8px;cursor:pointer;font-weight:600;margin-right:8px;font-size:13px;">✅ Yes</button>
@@ -291,9 +292,9 @@
             if (editFormContainer) return;
 
             const chat = document.getElementById('chatContainer');
-            // Check if there are existing confirmation buttons to find the type
+            // Check stored intent on the confirmation container
             const activeConfirmation = document.querySelector('.confirmation-buttons');
-            const isWFH = activeConfirmation && activeConfirmation.innerHTML.toLowerCase().includes('confirm_wfh');
+            const isWFH = activeConfirmation && activeConfirmation.dataset.intent === 'confirm_wfh';
 
             // Find current data if available
             const lastData = window.lastResponseData?.pendingRequest?.details || {};
@@ -318,7 +319,7 @@
                 ${typeField}
                 <div class="date-row" style="display:flex;gap:10px;">
                     <div style="flex:1">
-                        <label>${isWFH ? 'Start Date' : 'Start Date'}</label>
+                        <label>Start Date</label>
                         <input type="date" id="editStartDate" value="${lastData.startDate || lastData.date || ''}" style="width:100%">
                     </div>
                     <div style="flex:1">

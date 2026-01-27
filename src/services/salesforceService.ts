@@ -598,6 +598,34 @@ export class SalesforceService {
         };
     }
 
+    async getUserGender(email: string | undefined): Promise<'Male' | 'Female' | 'Unknown'> {
+        if (!email) return 'Unknown';
+
+        if (this.demoMode) {
+            // Mock gender: For demo, let's say anyone with 'mary' in email is Female, others Male
+            if (email.toLowerCase().includes('mary')) return 'Female';
+            return 'Male';
+        }
+
+        try {
+            if (!this.isAuthenticated) await this.authenticate();
+
+            const escapedEmail = email.toLowerCase().replace(/'/g, "\\'");
+            const soql = `SELECT Salutation FROM Contact WHERE Email = '${escapedEmail}' LIMIT 1`;
+            const result = await this.conn.query(soql);
+
+            if (result.records && result.records.length > 0) {
+                const salutation = result.records[0].Salutation;
+                if (['Mr.'].includes(salutation)) return 'Male';
+                if (['Ms.', 'Mrs.'].includes(salutation)) return 'Female';
+            }
+            return 'Unknown';
+        } catch (error) {
+            console.error('Error fetching user gender:', error);
+            return 'Unknown';
+        }
+    }
+
     // Update record status (for manager approval)
     async updateRecordStatus(recordId: string, status: string): Promise<any> {
         if (this.demoMode) {
