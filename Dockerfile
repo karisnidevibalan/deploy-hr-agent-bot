@@ -33,4 +33,4 @@ COPY --from=builder /app/public ./public
 EXPOSE 5000
 
 # Start configuration
-CMD ["npm", "run", "prod"]
+CMD ["node", "dist/src/app.js"]
