@@ -316,8 +316,16 @@
             editFormContainer.innerHTML = `
                 <h4>Update ${isWFH ? 'WFH' : 'Leave'} Request</h4>
                 ${typeField}
-                <label>${isWFH ? 'WFH Date' : 'Start Date'}</label>
-                <input type="date" id="editStartDate" value="${lastData.startDate || lastData.date || ''}">
+                <div class="date-row" style="display:flex;gap:10px;">
+                    <div style="flex:1">
+                        <label>${isWFH ? 'Start Date' : 'Start Date'}</label>
+                        <input type="date" id="editStartDate" value="${lastData.startDate || lastData.date || ''}" style="width:100%">
+                    </div>
+                    <div style="flex:1">
+                        <label>End Date</label>
+                        <input type="date" id="editEndDate" value="${lastData.endDate || lastData.startDate || lastData.date || ''}" style="width:100%">
+                    </div>
+                </div>
                 <label>Reason</label>
                 <textarea id="editReason" rows="2">${lastData.reason || ''}</textarea>
                 <div class="form-actions">
@@ -339,12 +347,13 @@
         function submitEdit(isWFH) {
             const details = {
                 startDate: document.getElementById('editStartDate').value,
+                endDate: document.getElementById('editEndDate').value,
                 reason: document.getElementById('editReason').value
             };
             if (!isWFH) {
                 details.leaveType = document.getElementById('editLeaveType').value;
             } else {
-                details.date = details.startDate;
+                details.date = details.startDate; // Keep for backward compatibility
             }
             sendChatRequest({ message: 'edit', editDetails: details });
             removeEditForm();

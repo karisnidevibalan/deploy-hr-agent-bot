@@ -575,7 +575,9 @@ function handleWfhEditRequest(
   if (detailsFromForm) {
     newDetails = {
       ...pending.details,
-      date: detailsFromForm.date || pending.details.date,
+      date: detailsFromForm.date || detailsFromForm.startDate || pending.details.date || pending.details.startDate,
+      startDate: detailsFromForm.startDate || pending.details.startDate || pending.details.date,
+      endDate: detailsFromForm.endDate || detailsFromForm.startDate || pending.details.endDate || pending.details.startDate || pending.details.date,
       reason: detailsFromForm.reason ?? pending.details.reason ?? 'Personal',
       employeeName: pending.details.employeeName || 'You'
     };
@@ -602,9 +604,13 @@ function handleWfhEditRequest(
     newDetails.employeeName = contextManager.getEmployeeName(sessionId) || newDetails.employeeName || DEFAULT_EMPLOYEE_NAME;
     contextManager.setPendingConfirmation(sessionId, 'wfh', newDetails);
 
+    const dateDisplay = newDetails.startDate && newDetails.endDate && newDetails.startDate !== newDetails.endDate
+      ? `${newDetails.startDate} to ${newDetails.endDate}`
+      : (newDetails.date || newDetails.startDate);
+
     const reply = `📋 **Please confirm your UPDATED WFH request:**
 
-• **Date**: ${newDetails.date}
+• **Date**: ${dateDisplay}
 • **Reason**: ${newDetails.reason}
 
 Tap a button below when you're ready.`;
@@ -897,10 +903,12 @@ const chatController = async (req: Request, res: Response) => {
               });
             }
             updatedDetails.date = date;
+            updatedDetails.startDate = date;
+            updatedDetails.endDate = entities.endDate || date;
             updatedDetails.step = 'reason';
             contextManager.setAwaitingWfhDetails(sessionId, updatedDetails);
             return res.json({
-              reply: `📝 **What is the reason for WFH on ${updatedDetails.date}?**`,
+              reply: `📝 **What is the reason for WFH on ${updatedDetails.startDate}${updatedDetails.endDate !== updatedDetails.startDate ? ' to ' + updatedDetails.endDate : ''}?**`,
               intent: 'ask_wfh_reason'
             });
           } else {
@@ -927,8 +935,11 @@ const chatController = async (req: Request, res: Response) => {
 
         contextManager.clearAwaitingWfhDetails(sessionId);
         contextManager.setPendingConfirmation(sessionId, 'wfh', updatedDetails);
+        const dateDisplay = updatedDetails.startDate && updatedDetails.endDate && updatedDetails.startDate !== updatedDetails.endDate
+          ? `${updatedDetails.startDate} to ${updatedDetails.endDate}`
+          : (updatedDetails.date || updatedDetails.startDate);
         return res.json({
-          reply: `📋 **Confirm your WFH request:**\n\n• **Date**: ${updatedDetails.date}\n• **Reason**: ${updatedDetails.reason}`,
+          reply: `📋 **Confirm your WFH request:**\n\n• **Date**: ${dateDisplay}\n• **Reason**: ${updatedDetails.reason}`,
           intent: 'confirm_wfh',
           showButtons: true,
           pendingRequest: { type: 'wfh', details: updatedDetails }

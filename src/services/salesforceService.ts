@@ -56,7 +56,7 @@ export class SalesforceService {
         }
         try {
             const result = await this.conn.query(`
-                    SELECT Id, Start_Date__c, End_Date__c, Leave_Type__c, Status__c, Reason__c, Duration_Days__c, CreatedDate
+                    SELECT Id, Start_Date__c, End_Date__c, Leave_Type__c, Status__c, Reason__c, CreatedDate
                     FROM Leave_Request__c
                     WHERE Employee__c IN (
                         SELECT Id FROM User WHERE Email = '${employeeEmail.toLowerCase()}'
@@ -211,11 +211,11 @@ export class SalesforceService {
 
             // Map leave types to Salesforce picklist values
             const leaveTypeMap: { [key: string]: string } = {
-                'ANNUAL': 'Annual Leave',
-                'SICK': 'Sick Leave',
-                'CASUAL': 'Casual Leave',
-                'MATERNITY': 'Maternity Leave',
-                'PATERNITY': 'Paternity Leave'
+                'ANNUAL': 'Annual',
+                'SICK': 'Sick',
+                'CASUAL': 'Casual',
+                'MATERNITY': 'Maternity',
+                'PATERNITY': 'Paternity'
             };
 
             const sfLeaveType = leaveTypeMap[leaveData.leaveType] || 'Casual Leave';
@@ -539,14 +539,21 @@ export class SalesforceService {
             const sfType = this.mapLeaveTypeToSf(key);
             const escapedEmail = (employeeEmail || '').toLowerCase().replace(/'/g, "\\'");
 
-            // Query for summary of approved/pending leaves of this type
-            const soql = `SELECT SUM(Duration_Days__c) usedDays FROM Leave_Request__c 
+            // Query for records to calculate used days manually since Duration_Days__c is invalid
+            const soql = `SELECT Start_Date__c, End_Date__c FROM Leave_Request__c 
                          WHERE Employee_Email__c = '${escapedEmail}' 
                          AND Leave_Type__c = '${sfType}' 
                          AND Status__c IN ('Approved', 'Pending')`;
 
             const result = await this.conn.query(soql);
-            const used = (result.records[0] as any).usedDays || 0;
+            let used = 0;
+            if (result.records && result.records.length > 0) {
+                result.records.forEach((r: any) => {
+                    const start = r.Start_Date__c;
+                    const end = r.End_Date__c || start;
+                    used += this.calculateDurationInDays(start, end);
+                });
+            }
 
             const entitlement = this.mockLeaveBalances[key] || { total: 12 };
             const total = entitlement.total;
@@ -574,13 +581,13 @@ export class SalesforceService {
 
     private mapLeaveTypeToSf(key: string): string {
         const map: Record<string, string> = {
-            'ANNUAL': 'Annual Leave',
-            'SICK': 'Sick Leave',
-            'CASUAL': 'Casual Leave',
-            'MATERNITY': 'Maternity Leave',
-            'PATERNITY': 'Paternity Leave'
+            'ANNUAL': 'Annual',
+            'SICK': 'Sick',
+            'CASUAL': 'Casual',
+            'MATERNITY': 'Paternity',
+            'PATERNITY': 'Paternity'
         };
-        return map[key] || 'Casual Leave';
+        return map[key] || 'Casual';
     }
 
     async checkLeaveBalance(employeeEmail: string | undefined, leaveType: string, requestedDays: number): Promise<{ total: number; used: number; remaining: number; leaveType: string; isAvailable: boolean }> {
