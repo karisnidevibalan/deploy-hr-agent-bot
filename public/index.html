@@ -183,13 +183,23 @@
             const div = document.createElement('div');
             div.className = `message ${isUser ? 'user-message' : 'bot-message'}`;
 
+            const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            const messageBody = document.createElement('div');
+            messageBody.className = 'message-body';
+
             if (isUser) {
-                div.innerText = msg;
+                messageBody.innerText = msg;
             } else {
-                div.innerHTML = parseBotMessageMarkdown(msg);
+                messageBody.innerHTML = parseBotMessageMarkdown(msg);
                 if (ttsEnabled) speak(msg);
             }
 
+            const timeSpan = document.createElement('span');
+            timeSpan.className = 'message-time';
+            timeSpan.innerText = time;
+
+            div.appendChild(messageBody);
+            div.appendChild(timeSpan);
             chat.appendChild(div);
             chat.scrollTop = chat.scrollHeight;
         }
@@ -214,7 +224,7 @@
                     body: JSON.stringify(payload)
                 });
                 const data = await response.json();
-
+                window.lastResponseData = data; // Store for edit form
                 if (data.reply) addMessage(data.reply);
 
                 // Show Quick Actions if it's a greeting or general start
@@ -227,6 +237,7 @@
                 if (data.intent && ['leave_created', 'wfh_created', 'confirmation_no'].includes(data.intent)) {
                     removeConfirmationButtons();
                     removeEditForm();
+                    setTimeout(showQuickActions, 500); // Show quick actions after success
                 }
 
             } catch (err) {
@@ -278,26 +289,39 @@
 
         function showEditForm() {
             if (editFormContainer) return;
-            removeConfirmationButtons();
 
             const chat = document.getElementById('chatContainer');
+            // Check if there are existing confirmation buttons to find the type
+            const activeConfirmation = document.querySelector('.confirmation-buttons');
+            const isWFH = activeConfirmation && activeConfirmation.innerHTML.toLowerCase().includes('confirm_wfh');
+
+            // Find current data if available
+            const lastData = window.lastResponseData?.pendingRequest?.details || {};
+
             editFormContainer = document.createElement('div');
             editFormContainer.className = 'edit-form-modal';
 
+            let typeField = '';
+            if (!isWFH) {
+                typeField = `
+                    <label>Leave Type</label>
+                    <select id="editLeaveType">
+                        <option value="ANNUAL" ${lastData.leaveType === 'ANNUAL' ? 'selected' : ''}>Annual</option>
+                        <option value="SICK" ${lastData.leaveType === 'SICK' ? 'selected' : ''}>Sick</option>
+                        <option value="CASUAL" ${lastData.leaveType === 'CASUAL' ? 'selected' : ''}>Casual</option>
+                    </select>
+                `;
+            }
+
             editFormContainer.innerHTML = `
-                <h4>Update Request</h4>
-                <label>Leave Type</label>
-                <select id="editLeaveType">
-                    <option value="ANNUAL">Annual</option>
-                    <option value="SICK">Sick</option>
-                    <option value="CASUAL">Casual</option>
-                </select>
-                <label>Start Date</label>
-                <input type="date" id="editStartDate">
+                <h4>Update ${isWFH ? 'WFH' : 'Leave'} Request</h4>
+                ${typeField}
+                <label>${isWFH ? 'WFH Date' : 'Start Date'}</label>
+                <input type="date" id="editStartDate" value="${lastData.startDate || lastData.date || ''}">
                 <label>Reason</label>
-                <textarea id="editReason" rows="2"></textarea>
+                <textarea id="editReason" rows="2">${lastData.reason || ''}</textarea>
                 <div class="form-actions">
-                    <button class="btn-save" onclick="submitEdit()">Save changes</button>
+                    <button class="btn-save" onclick="submitEdit(${isWFH})">Save changes</button>
                     <button class="btn-cancel" onclick="removeEditForm()">Cancel</button>
                 </div>
             `;
@@ -312,12 +336,16 @@
             }
         }
 
-        function submitEdit() {
+        function submitEdit(isWFH) {
             const details = {
-                leaveType: document.getElementById('editLeaveType').value,
                 startDate: document.getElementById('editStartDate').value,
                 reason: document.getElementById('editReason').value
             };
+            if (!isWFH) {
+                details.leaveType = document.getElementById('editLeaveType').value;
+            } else {
+                details.date = details.startDate;
+            }
             sendChatRequest({ message: 'edit', editDetails: details });
             removeEditForm();
         }

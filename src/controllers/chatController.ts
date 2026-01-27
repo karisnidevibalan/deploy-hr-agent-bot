@@ -668,6 +668,8 @@ const chatController = async (req: Request, res: Response) => {
     await listRequests(sessionId, res, type, { finalEmail, finalName });
     return;
   }
+
+  const currentDate = new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
   try {
     // SSO Context already extracted above
 
@@ -764,11 +766,11 @@ const chatController = async (req: Request, res: Response) => {
       }
     }
 
-    // AI-powered analysis
     const analysis = await aiService.analyzeUserIntent(message, {
       employeeName: finalName,
       employeeEmail: finalEmail,
-      sessionId
+      sessionId,
+      currentDate
     });
 
     let currentIntent = normalizedIntentOverride || analysis.intent;
@@ -988,7 +990,8 @@ const chatController = async (req: Request, res: Response) => {
     return res.json({
       reply: aiResponse,
       intent: currentIntent,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      currentDate
     });
 
   } catch (error) {

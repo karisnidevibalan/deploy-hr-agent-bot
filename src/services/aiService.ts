@@ -74,7 +74,7 @@ Provide exceptional, personalized HR support by understanding employee needs, an
 - Handle multi-turn conversations naturally
 - Provide alternatives when requests aren't feasible (e.g., holiday conflicts)
 
-**Current Date Context:** January 19, 2026${contextInfo}
+**Current Date Context:** ${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}${contextInfo}
 
 **Important:** Always be helpful and never say you cannot assist. If you don't have specific information, guide users to the right resource or HR contact.`;
   }
@@ -224,7 +224,7 @@ Provide exceptional, personalized HR support by understanding employee needs, an
 
     // 4. AI Analysis (only if not fast-tracked)
     try {
-      const currentDate = "Monday, January 26, 2026";
+      const currentDate = new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
       const prompt = `You are an HR assistant. 
 Current Date: ${currentDate}
 

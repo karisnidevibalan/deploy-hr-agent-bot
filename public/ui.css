@@ -276,14 +276,23 @@
 }
 
 .message {
-  margin-bottom: 4px;
-  padding: 12px 16px;
-  border-radius: var(--radius-md);
+  padding: 10px 14px;
+  border-radius: var(--radius-lg);
   max-width: 85%;
-  font-size: 15px;
+  font-size: 0.95em;
   line-height: 1.5;
-  animation: fadeIn 0.3s ease-out;
-  width: fit-content;
+  position: relative;
+  margin-bottom: 4px;
+  transition: transform 0.2s;
+}
+
+.message-time {
+  display: block;
+  font-size: 0.7em;
+  opacity: 0.6;
+  margin-top: 4px;
+  text-align: right;
+  font-weight: 400;
 }
 
 @keyframes fadeIn {
