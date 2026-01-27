@@ -211,11 +211,11 @@ export class SalesforceService {
 
             // Map leave types to Salesforce picklist values
             const leaveTypeMap: { [key: string]: string } = {
-                'ANNUAL': 'Annual',
-                'SICK': 'Sick',
-                'CASUAL': 'Casual',
-                'MATERNITY': 'Maternity',
-                'PATERNITY': 'Paternity'
+                'ANNUAL': 'Casual Leave', // Annual is missing in SF, mapping to Casual
+                'SICK': 'Sick Leave',
+                'CASUAL': 'Casual Leave',
+                'MATERNITY': 'Sick Leave',
+                'PATERNITY': 'Sick Leave'
             };
 
             const sfLeaveType = leaveTypeMap[leaveData.leaveType] || 'Casual Leave';
@@ -581,13 +581,13 @@ export class SalesforceService {
 
     private mapLeaveTypeToSf(key: string): string {
         const map: Record<string, string> = {
-            'ANNUAL': 'Annual',
-            'SICK': 'Sick',
-            'CASUAL': 'Casual',
-            'MATERNITY': 'Paternity',
-            'PATERNITY': 'Paternity'
+            'ANNUAL': 'Casual Leave',
+            'SICK': 'Sick Leave',
+            'CASUAL': 'Casual Leave',
+            'MATERNITY': 'Sick Leave',
+            'PATERNITY': 'Sick Leave'
         };
-        return map[key] || 'Casual';
+        return map[key] || 'Casual Leave';
     }
 
     async checkLeaveBalance(employeeEmail: string | undefined, leaveType: string, requestedDays: number): Promise<{ total: number; used: number; remaining: number; leaveType: string; isAvailable: boolean }> {
