@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manager Dashboard - Winfomi HR</title>
+    <link rel="stylesheet" href="/ui.css">
+    <style>
+        .dashboard-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+        }
+        .stats-card {
+            display: inline-block;
+            padding: 12px 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 8px;
+            margin-right: 12px;
+        }
+        .requests-grid {
+            display: grid;
+            gap: 16px;
+        }
+        .request-item {
+            background: white;
+            border: 1px solid #e6edf3;
+            border-radius: 8px;
+            padding: 20px;
+            transition: all 0.2s;
+        }
+        .request-item:hover {
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            transform: translateY(-2px);
+        }
+        .request-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 12px;
+        }
+        .employee-name {
+            font-size: 18px;
+            font-weight: 600;
+            color: #07203a;
+        }
+        .request-badge {
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        .badge-pending {
+            background: #fff3cd;
+            color: #856404;
+        }
+        .request-details {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+        .detail-item {
+            font-size: 14px;
+        }
+        .detail-label {
+            color: #6b7280;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .detail-value {
+            color: #07203a;
+            font-weight: 500;
+            margin-top: 4px;
+        }
+        .reason-text {
+            background: #f8f9fa;
+            padding: 12px;
+            border-radius: 6px;
+            font-size: 14px;
+            color: #495057;
+            margin-bottom: 16px;
+        }
+        .action-btns {
+            display: flex;
+            gap: 12px;
+        }
+        .btn-review {
+            flex: 1;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .btn-approve-quick {
+            background: linear-gradient(135deg, #84fab0 0%, #8fd3f4 100%);
+            color: #0f5132;
+        }
+        .btn-reject-quick {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+        }
+        .btn-view-details {
+            background: #3b82f6;
+            color: white;
+        }
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #6b7280;
+        }
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #6b7280;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="dashboard-header">
+                <div>
+                    <h1>👔 Manager Dashboard</h1>
+                    <p>Review and approve pending leave requests</p>
+                </div>
+                <div>
+                    <span class="stats-card" id="pendingCount">Loading...</span>
+                </div>
+            </div>
+        </div>
+
+        <div id="leaveRequestsSection">
+            <h2>📝 Leave Requests</h2>
+            <div id="leaveRequestsList" class="requests-grid">
+                <div class="loading">⏳ Loading leave requests...</div>
+            </div>
+        </div>
+        <div id="wfhRequestsSection" style="margin-top:40px;">
+            <h2>🏠 WFH Requests</h2>
+            <div id="wfhRequestsList" class="requests-grid">
+                <div class="loading">⏳ Loading WFH requests...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        async function loadManagerRequests() {
+            try {
+                const response = await fetch('/api/manager/requests');
+                const data = await response.json();
+
+                // Leave Requests
+                const leaveContainer = document.getElementById('leaveRequestsList');
+                if (data.success && data.leaveRequests && data.leaveRequests.length > 0) {
+                    leaveContainer.innerHTML = data.leaveRequests.map(req => renderRequestItem(req, 'leave')).join('');
+                } else {
+                    leaveContainer.innerHTML = `<div class="empty-state">No pending leave requests.</div>`;
+                }
+
+                // WFH Requests
+                const wfhContainer = document.getElementById('wfhRequestsList');
+                if (data.success && data.wfhRequests && data.wfhRequests.length > 0) {
+                    wfhContainer.innerHTML = data.wfhRequests.map(req => renderRequestItem(req, 'wfh')).join('');
+                } else {
+                    wfhContainer.innerHTML = `<div class="empty-state">No pending WFH requests.</div>`;
+                }
+
+                // Update stats
+                const countBadge = document.getElementById('pendingCount');
+                const total = (data.leaveRequests?.length || 0) + (data.wfhRequests?.length || 0);
+                countBadge.textContent = `${total} Pending`;
+            } catch (error) {
+                document.getElementById('leaveRequestsList').innerHTML = `<div class="empty-state">❌ Error loading leave requests<br>${error.message}</div>`;
+                document.getElementById('wfhRequestsList').innerHTML = `<div class="empty-state">❌ Error loading WFH requests<br>${error.message}</div>`;
+            }
+        }
+
+        function renderRequestItem(req, type) {
+            const id = req.Id || req.id;
+            const empName = req.Employee_Name__c || req.employeeName || 'Unknown';
+            const leaveType = req.Leave_Type__c || req.leaveType || (type === 'wfh' ? 'WFH' : 'N/A');
+            const startDate = req.Start_Date__c || req.startDate || req.Date__c;
+            const endDate = req.End_Date__c || req.endDate || '';
+            const reason = req.Reason__c || req.reason || 'No reason provided';
+            const source = req.Request_Source__c || 'N/A';
+            const status = req.Status__c || req.status || 'Pending';
+
+            const startFormatted = startDate ? new Date(startDate).toLocaleDateString() : '—';
+            const endFormatted = endDate ? new Date(endDate).toLocaleDateString() : '';
+
+            return `
+                <div class="request-item">
+                    <div class="request-header">
+                        <div class="employee-name">${empName}</div>
+                        <span class="request-badge badge-pending">${status}</span>
+                    </div>
+                    <div class="request-details">
+                        <div class="detail-item">
+                            <div class="detail-label">${type === 'wfh' ? 'WFH Date' : 'Leave Type'}</div>
+                            <div class="detail-value">${type === 'wfh' ? startFormatted : leaveType}</div>
+                        </div>
+                        ${type === 'leave' ? `
+                        <div class="detail-item">
+                            <div class="detail-label">Start Date</div>
+                            <div class="detail-value">${startFormatted}</div>
+                        </div>
+                        <div class="detail-item">
+                            <div class="detail-label">End Date</div>
+                            <div class="detail-value">${endFormatted}</div>
+                        </div>
+                        ` : ''}
+                        <div class="detail-item">
+                            <div class="detail-label">Request Source</div>
+                            <div class="detail-value">${source}</div>
+                        </div>
+                    </div>
+                    <div class="reason-text">
+                        <strong>Reason:</strong> ${reason}
+                    </div>
+                    <div class="action-btns">
+                        <button class="btn-review btn-approve-quick" onclick="quickApprove('${id}', '${type}')">✅ Approve</button>
+                        <button class="btn-review btn-reject-quick" onclick="quickReject('${id}', '${type}')">❌ Reject</button>
+                        <button class="btn-review btn-view-details" onclick="viewDetails('${id}')">📋 Details</button>
+                    </div>
+                </div>
+            `;
+        }
+
+        async function quickApprove(requestId, type) {
+            if (!confirm('Approve this request?')) return;
+            try {
+                const response = await fetch(`/api/manager/approve/${requestId}?type=${type}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        managerComments: 'Approved from dashboard',
+                        managerName: 'Manager'
+                    })
+                });
+                const result = await response.json();
+                if (result.success) {
+                    alert('✅ Request approved successfully!');
+                    loadManagerRequests(); // Reload the list
+                } else {
+                    alert('❌ Failed to approve: ' + result.error);
+                }
+            } catch (error) {
+                alert('❌ Error: ' + error.message);
+            }
+        }
+
+        async function quickReject(requestId, type) {
+            const reason = prompt('Enter rejection reason:');
+            if (!reason) return;
+            try {
+                const response = await fetch(`/api/manager/reject/${requestId}?type=${type}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        managerComments: reason,
+                        managerName: 'Manager'
+                    })
+                });
+                const result = await response.json();
+                if (result.success) {
+                    alert('✅ Request rejected');
+                    loadManagerRequests(); // Reload the list
+                } else {
+                    alert('❌ Failed to reject: ' + result.error);
+                }
+            } catch (error) {
+                alert('❌ Error: ' + error.message);
+            }
+        }
+
+        function viewDetails(requestId) {
+            window.location.href = `/manager-approval.html?id=${requestId}`;
+        }
+
+        // Load all requests on page load
+        window.onload = loadManagerRequests;
+    </script>
+</body>
+</html>

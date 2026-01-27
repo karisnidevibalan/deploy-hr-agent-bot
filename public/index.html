@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HR Bot - People Portal</title>
+    <link rel="stylesheet" href="/ui.css">
+    <link rel="icon" href="data:image/x-icon;," type="image/x-icon">
+    <style>
+        /* Compact bot message spacing & Milder overrides */
+        .bot-message ul {
+            margin: 8px 0 8px 22px;
+            padding: 0;
+        }
+
+        .bot-message li {
+            margin: 2px 0;
+            line-height: 1.4;
+        }
+
+        .bot-message p {
+            margin: 6px 0;
+            line-height: 1.5;
+        }
+
+        .edit-form-modal {
+            background: white;
+            border: 1px solid #eef2f6;
+            border-radius: var(--radius-md);
+            padding: 16px;
+            max-width: 85%;
+            width: auto;
+            min-width: 280px;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+            margin-top: 8px;
+            border-bottom-left-radius: 4px;
+        }
+
+        .edit-form-modal h4 {
+            margin: 0 0 4px 0;
+            font-size: 16px;
+            color: var(--brand);
+        }
+
+        .edit-form-modal label {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--muted);
+            margin-bottom: -4px;
+        }
+
+        .edit-form-modal select,
+        .edit-form-modal input,
+        .edit-form-modal textarea {
+            padding: 10px 12px;
+            border-radius: 8px;
+            border: 1px solid #e2e8f0;
+            font-size: 14px;
+            background: #f8fafc;
+            width: 100%;
+            box-sizing: border-box;
+            font-family: inherit;
+        }
+
+        .edit-form-modal .form-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 6px;
+        }
+
+        .edit-form-modal button {
+            padding: 8px 16px;
+            border-radius: 6px;
+            border: none;
+            font-weight: 600;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .btn-save {
+            background: var(--accent);
+            color: white;
+        }
+
+        .btn-cancel {
+            background: #f1f5f9;
+            color: var(--brand);
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- Bot Launcher Button -->
+    <div class="bot-launcher" id="botLauncher" onclick="toggleBot()">
+        💬
+    </div>
+
+    <!-- Main Bot Container (Floating) -->
+    <div class="container" id="botContainer">
+        <div class="header">
+            <div style="display:flex; justify-content:space-between; align-items:center; width:100%;">
+                <div style="display:flex; align-items:center; gap:12px;">
+                    <img src="/avatar.png" alt="Bot Icon"
+                        style="width:40px; height:40px; border-radius:50%; background:white; padding:2px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                    <div>
+                        <h1 style="margin:0; font-size:1.4em;">HR Assistant</h1>
+                        <p style="margin:0; font-size:0.85em; opacity:0.9;">Always active for you</p>
+                    </div>
+                </div>
+                <button onclick="toggleBot()"
+                    style="background:none; border:none; color:var(--muted); cursor:pointer; font-size:1.2em;">✕</button>
+            </div>
+        </div>
+
+        <div class="chat-container" id="chatContainer">
+            <div class="message bot-message">
+                <p>Hello! How can I help you today?</p>
+            </div>
+        </div>
+
+        <div class="loading" id="loadingDiv"
+            style="display:none; text-align:center; padding:10px; font-size:0.9em; color:var(--muted); background: var(--bg-1);">
+            🤔 Thinking...
+        </div>
+
+        <div class="input-container">
+            <button id="ttsButton" class="tts-button" title="Toggle Voice" onclick="toggleTTS()">🔊</button>
+            <input type="text" id="messageInput" class="message-input" placeholder="Ask about leave, WFH..."
+                onkeypress="handleKeyPress(event)" autocomplete="off">
+            <button id="micButton" class="mic-button" title="Speak" onclick="toggleSpeechRecognition()">🎤</button>
+            <button class="send-button" onclick="sendMessage()"></button>
+        </div>
+    </div>
+
+    <script>
+        // --- Configuration & State ---
+        let editFormContainer = null;
+        let ttsEnabled = false;
+        const quickActions = [
+            { label: 'Apply Leave', text: 'I want to apply for leave' },
+            { label: 'Apply WFH', text: 'I want to apply for WFH' },
+            { label: 'My Requests', text: 'Show my requests' },
+            { label: 'Holidays', text: 'Show holiday list' }
+        ];
+
+        function toggleBot() {
+            const container = document.getElementById('botContainer');
+            container.classList.toggle('open');
+            if (container.classList.contains('open')) {
+                document.getElementById('messageInput').focus();
+            }
+        }
+
+        function toggleTTS() {
+            ttsEnabled = !ttsEnabled;
+            const btn = document.getElementById('ttsButton');
+            btn.innerText = ttsEnabled ? '🔈' : '🔊';
+            btn.style.color = ttsEnabled ? 'var(--accent)' : 'var(--brand)';
+            if (!ttsEnabled) window.speechSynthesis.cancel();
+        }
+
+        // --- Chat Functions ---
+        function handleKeyPress(e) { if (e.key === 'Enter') sendMessage(); }
+
+        async function sendMessage() {
+            const input = document.getElementById('messageInput');
+            const msg = input.value.trim();
+            if (!msg) return;
+
+            addMessage(msg, true);
+            input.value = '';
+            await sendChatRequest({ message: msg });
+        }
+
+        function addMessage(msg, isUser = false) {
+            const chat = document.getElementById('chatContainer');
+            const div = document.createElement('div');
+            div.className = `message ${isUser ? 'user-message' : 'bot-message'}`;
+
+            if (isUser) {
+                div.innerText = msg;
+            } else {
+                div.innerHTML = parseBotMessageMarkdown(msg);
+                if (ttsEnabled) speak(msg);
+            }
+
+            chat.appendChild(div);
+            chat.scrollTop = chat.scrollHeight;
+        }
+
+        async function sendChatRequest(payload) {
+            const loading = document.getElementById('loadingDiv');
+            loading.style.display = 'block';
+
+            try {
+                const urlParams = new URLSearchParams(window.location.search);
+                const ssoName = urlParams.get('name');
+                const ssoEmail = urlParams.get('email');
+
+                const response = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Session-Id': getSessionId(),
+                        'x-user-name': ssoName || '',
+                        'x-user-email': ssoEmail || ''
+                    },
+                    body: JSON.stringify(payload)
+                });
+                const data = await response.json();
+
+                if (data.reply) addMessage(data.reply);
+
+                // Show Quick Actions if it's a greeting or general start
+                const greetingTriggers = ['how can i help', 'hello', 'hi', 'what can i do'];
+                if (data.reply && greetingTriggers.some(t => data.reply.toLowerCase().includes(t))) {
+                    showQuickActions();
+                }
+
+                if (data.showButtons) addConfirmationButtons();
+                if (data.intent && ['leave_created', 'wfh_created', 'confirmation_no'].includes(data.intent)) {
+                    removeConfirmationButtons();
+                    removeEditForm();
+                }
+
+            } catch (err) {
+                console.error(err);
+                addMessage('❌ Sorry, something went wrong.');
+            } finally {
+                loading.style.display = 'none';
+            }
+        }
+
+        // --- UI Extensions ---
+        function showQuickActions() {
+            const chat = document.getElementById('chatContainer');
+            const div = document.createElement('div');
+            div.className = 'quick-actions-container';
+            quickActions.forEach(action => {
+                const pill = document.createElement('button');
+                pill.className = 'quick-action-pill';
+                pill.innerText = action.label;
+                pill.onclick = () => {
+                    addMessage(action.text, true);
+                    sendChatRequest({ message: action.text });
+                    div.remove();
+                };
+                div.appendChild(pill);
+            });
+            chat.appendChild(div);
+            chat.scrollTop = chat.scrollHeight;
+        }
+
+        function addConfirmationButtons() {
+            removeConfirmationButtons();
+            const chat = document.getElementById('chatContainer');
+            const div = document.createElement('div');
+            div.className = 'quick-replies confirmation-buttons';
+            div.style.marginTop = '10px';
+            div.innerHTML = `
+                <button onclick="sendChatRequest({message:'yes'})" style="background:#22c55e;color:white;border:none;padding:6px 14px;border-radius:8px;cursor:pointer;font-weight:600;margin-right:8px;font-size:13px;">✅ Yes</button>
+                <button onclick="sendChatRequest({message:'no'})" style="background:#ef4444;color:white;border:none;padding:6px 14px;border-radius:8px;cursor:pointer;font-weight:600;margin-right:8px;font-size:13px;">❌ No</button>
+                <button onclick="showEditForm()" style="background:#f59e42;color:white;border:none;padding:6px 14px;border-radius:8px;cursor:pointer;font-weight:600;font-size:13px;">✏️ Edit</button>
+            `;
+            chat.appendChild(div);
+            chat.scrollTop = chat.scrollHeight;
+        }
+
+        function removeConfirmationButtons() {
+            document.querySelectorAll('.confirmation-buttons').forEach(el => el.remove());
+        }
+
+        function showEditForm() {
+            if (editFormContainer) return;
+            removeConfirmationButtons();
+
+            const chat = document.getElementById('chatContainer');
+            editFormContainer = document.createElement('div');
+            editFormContainer.className = 'edit-form-modal';
+
+            editFormContainer.innerHTML = `
+                <h4>Update Request</h4>
+                <label>Leave Type</label>
+                <select id="editLeaveType">
+                    <option value="ANNUAL">Annual</option>
+                    <option value="SICK">Sick</option>
+                    <option value="CASUAL">Casual</option>
+                </select>
+                <label>Start Date</label>
+                <input type="date" id="editStartDate">
+                <label>Reason</label>
+                <textarea id="editReason" rows="2"></textarea>
+                <div class="form-actions">
+                    <button class="btn-save" onclick="submitEdit()">Save changes</button>
+                    <button class="btn-cancel" onclick="removeEditForm()">Cancel</button>
+                </div>
+            `;
+            chat.appendChild(editFormContainer);
+            chat.scrollTop = chat.scrollHeight;
+        }
+
+        function removeEditForm() {
+            if (editFormContainer) {
+                editFormContainer.remove();
+                editFormContainer = null;
+            }
+        }
+
+        function submitEdit() {
+            const details = {
+                leaveType: document.getElementById('editLeaveType').value,
+                startDate: document.getElementById('editStartDate').value,
+                reason: document.getElementById('editReason').value
+            };
+            sendChatRequest({ message: 'edit', editDetails: details });
+            removeEditForm();
+        }
+
+        // --- Helpers ---
+        function getSessionId() {
+            let id = localStorage.getItem('hr_bot_session_id');
+            if (!id) { id = Math.random().toString(36).substring(7); localStorage.setItem('hr_bot_session_id', id); }
+            return id;
+        }
+
+        function parseBotMessageMarkdown(text) {
+            let html = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            html = html.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
+            html = html.replace(/(^|\n)[\-*] (.*?)(?=\n|$)/g, '$1<ul><li>$2</li></ul>');
+            html = html.replace(/\n\n/g, '<br><br>');
+            html = html.replace(/\n/g, '<br>');
+            return html;
+        }
+
+        function speak(text) {
+            window.speechSynthesis.cancel();
+            const u = new SpeechSynthesisUtterance(text.replace(/[*#]/g, ''));
+            u.lang = 'en-IN';
+            window.speechSynthesis.speak(u);
+        }
+
+        // --- STT ---
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        let recognition = SpeechRecognition ? new SpeechRecognition() : null;
+        if (recognition) {
+            recognition.continuous = false;
+            recognition.onresult = (e) => {
+                document.getElementById('messageInput').value = e.results[0][0].transcript;
+                sendMessage();
+            };
+            recognition.onstart = () => { document.getElementById('micButton').style.color = '#ef4444'; };
+            recognition.onend = () => { document.getElementById('micButton').style.color = 'var(--brand)'; };
+        }
+        function toggleSpeechRecognition() { if (recognition) recognition.start(); }
+
+    </script>
+</body>
+
+</html>
