@@ -9,9 +9,21 @@ const groq = new Groq({
 });
 
 export class PolicyService {
-    private static dataDir = fs.existsSync(path.join(process.cwd(), 'src', 'data'))
-        ? path.join(process.cwd(), 'src', 'data')
-        : path.join(process.cwd(), 'data');
+    private static dataDir = (() => {
+        const paths = [
+            path.join(process.cwd(), 'src', 'data'),
+            path.join(process.cwd(), 'dist', 'src', 'data'),
+            path.join(process.cwd(), 'data')
+        ];
+        const existingPath = paths.find(p => fs.existsSync(p));
+        const finalPath = existingPath || path.join(process.cwd(), 'data');
+
+        // Ensure the directory exists
+        if (!fs.existsSync(finalPath)) {
+            fs.mkdirSync(finalPath, { recursive: true });
+        }
+        return finalPath;
+    })();
 
     static async extractText(file: Express.Multer.File): Promise<string> {
         const extension = path.extname(file.originalname).toLowerCase();
