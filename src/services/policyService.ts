@@ -128,6 +128,11 @@ export class PolicyService {
 
             const updatedJson = JSON.parse(response.choices[0]?.message?.content || '{}');
 
+            // Use year-specific filename for holidays if applicable
+            if (policyType.toLowerCase() === 'holiday' && updatedJson.year) {
+                fileName = `holidays_${updatedJson.year}.json`;
+            }
+
             const filePath = path.join(this.dataDir, fileName);
             fs.writeFileSync(filePath, JSON.stringify(updatedJson, null, 2));
 
@@ -148,7 +153,45 @@ export class PolicyService {
         } catch (error) {
             console.error(`Error loading policy ${fileName}:`, error);
         }
-        // Fallback if file doesn't exist or is invalid
+        // Fallback for holidays if specific file not found
+        if (fileName === 'holidays.json') {
+            return this.getAllHolidays();
+        }
         return {};
+    }
+
+    static getAllHolidays(): any {
+        try {
+            const files = fs.readdirSync(this.dataDir);
+            const holidayFiles = files.filter(f => f.startsWith('holidays') && f.endsWith('.json'));
+
+            let allHolidays: any[] = [];
+            let latestYear = 0;
+
+            holidayFiles.forEach(file => {
+                try {
+                    const data = JSON.parse(fs.readFileSync(path.join(this.dataDir, file), 'utf8'));
+                    if (data.holidays) {
+                        allHolidays = allHolidays.concat(data.holidays);
+                    }
+                    if (data.year > latestYear) {
+                        latestYear = data.year;
+                    }
+                } catch (e) {
+                    console.error(`Error reading holiday file ${file}:`, e);
+                }
+            });
+
+            // Remove duplicates (unique by date and name)
+            const uniqueHolidays = Array.from(new Map(allHolidays.map(h => [`${h.date}-${h.name}`, h])).values());
+
+            return {
+                year: latestYear || new Date().getFullYear(),
+                holidays: uniqueHolidays.sort((a, b) => a.date.localeCompare(b.date))
+            };
+        } catch (error) {
+            console.error('Error getting all holidays:', error);
+            return { holidays: [] };
+        }
     }
 }

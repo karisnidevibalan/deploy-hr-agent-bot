@@ -1042,7 +1042,7 @@ const chatController = async (req: Request, res: Response) => {
             showGenderNote = true;
           }
 
-          let reply = `📋 **Your Leave Balance Summary (2026):**\n\n`;
+          let reply = `📋 **Your Leave Balance Summary (${new Date().getFullYear()}):**\n\n`;
           filteredBalances.forEach(b => {
             reply += `• **${b.leaveType}**: ${b.remaining} days left (out of ${b.total})\n`;
           });
@@ -1081,18 +1081,25 @@ const chatController = async (req: Request, res: Response) => {
 
       case 'holiday_list': {
         try {
-          const holidaysData = PolicyService.getPolicy('holidays.json');
+          const holidaysData = PolicyService.getAllHolidays();
           const holidays = holidaysData.holidays || [];
-          const year = holidaysData.year || new Date().getFullYear();
 
-          let reply = `🗓️ **${year} Company Holidays:**\n\n`;
           if (holidays.length === 0) {
-            reply = "I couldn't find any holidays for the current period.";
-          } else {
-            holidays.forEach((h: any) => {
-              reply += `• **${h.name}**: ${h.date}\n`;
-            });
+            return res.json({ reply: "I couldn't find any holidays for the current period.", intent: 'holiday_list', timestamp: new Date().toISOString() });
           }
+
+          let reply = `🗓️ **Company Holiday Calendar:**\n\n`;
+          let currentYear = '';
+
+          holidays.forEach((h: any) => {
+            const hYear = new Date(h.date).getFullYear();
+            if (hYear.toString() !== currentYear) {
+              currentYear = hYear.toString();
+              reply += `\n📅 **${currentYear}**\n`;
+            }
+            reply += `• **${h.name}**: ${h.date}\n`;
+          });
+
           return res.json({ reply, intent: 'holiday_list', timestamp: new Date().toISOString() });
         } catch (e) {
           return res.json({ reply: "I'm sorry, I couldn't load the holiday list.", intent: 'error' });

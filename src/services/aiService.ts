@@ -30,7 +30,7 @@ export class AiService {
     const contextInfo = conversationContext ? `\n\nConversation Context:\n${conversationContext}` : '';
 
     const leavePolicy = PolicyService.getPolicy('leavePolicy.json');
-    const holidays = PolicyService.getPolicy('holidays.json');
+    const holidays = PolicyService.getAllHolidays();
     const wfhPolicy = PolicyService.getPolicy('wfhPolicy.json');
     const reimbursementPolicy = PolicyService.getPolicy('reimbursement-policy.json');
 
@@ -71,7 +71,7 @@ Provide exceptional, personalized HR support by understanding employee needs, an
 
 **Special Intelligence:**
 - Detect when users want to apply for leave even if they don't say "apply"
-- Understand date formats: "tomorrow", "next Friday", "25th Dec", "12.03.2026"
+- Understand date formats: "tomorrow", "next Friday", "25th Dec", "12.03.${new Date().getFullYear()}"
 - Recognize leave types from context: "sick leave", "vacation", "medical"
 - Handle multi-turn conversations naturally
 - Provide alternatives when requests aren't feasible (e.g., holiday conflicts)
