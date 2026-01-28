@@ -1098,20 +1098,36 @@ const chatController = async (req: Request, res: Response) => {
       case 'holiday_list': {
         try {
           const holidaysData = PolicyService.getAllHolidays();
-          const holidays = holidaysData.holidays || [];
+          let holidays = holidaysData.holidays || [];
+          const queryYear = analysis.entities?.year;
+          const lowerMsg = message.toLowerCase();
+          const isCountQuery = lowerMsg.includes('how many') || lowerMsg.includes('count') || lowerMsg.includes('number of') || lowerMsg.includes('total');
+
+          if (queryYear) {
+            holidays = holidays.filter((h: any) => h.date.startsWith(queryYear.toString()));
+          }
 
           if (holidays.length === 0) {
-            return res.json({ reply: "I couldn't find any holidays for the current period.", intent: 'holiday_list', timestamp: new Date().toISOString() });
+            return res.json({ reply: `I couldn't find any holidays for ${queryYear || 'the current period'}.`, intent: 'holiday_list', timestamp: new Date().toISOString() });
+          }
+
+          if (isCountQuery) {
+            const yearText = queryYear ? ` in ${queryYear}` : "";
+            return res.json({
+              reply: `There are **${holidays.length}** company holidays${yearText}.`,
+              intent: 'holiday_count',
+              timestamp: new Date().toISOString()
+            });
           }
 
           let reply = `🗓️ **Company Holiday Calendar:**\n\n`;
-          let currentYear = '';
+          let currentYearLabel = '';
 
           holidays.forEach((h: any) => {
             const hYear = new Date(h.date).getFullYear();
-            if (hYear.toString() !== currentYear) {
-              currentYear = hYear.toString();
-              reply += `\n📅 **${currentYear}**\n`;
+            if (hYear.toString() !== currentYearLabel) {
+              currentYearLabel = hYear.toString();
+              reply += `\n📅 **${currentYearLabel}**\n`;
             }
             reply += `• **${h.name}**: ${h.date}\n`;
           });
@@ -1119,6 +1135,37 @@ const chatController = async (req: Request, res: Response) => {
           return res.json({ reply, intent: 'holiday_list', timestamp: new Date().toISOString() });
         } catch (e) {
           return res.json({ reply: "I'm sorry, I couldn't load the holiday list.", intent: 'error' });
+        }
+      }
+
+      case 'is_holiday': {
+        try {
+          const holidaysData = PolicyService.getAllHolidays();
+          const holidays = holidaysData.holidays || [];
+          const targetDate = analysis.entities?.date || new Date().toISOString().split('T')[0];
+
+          const holidayMatch = holidays.find((h: any) => h.date === targetDate);
+          if (holidayMatch) {
+            return res.json({
+              reply: `**Yes ✅**, ${targetDate} is a holiday (**${holidayMatch.name}**).`,
+              intent: 'is_holiday_yes',
+              timestamp: new Date().toISOString()
+            });
+          } else {
+            const dateObj = new Date(targetDate);
+            const isWeekend = dateObj.getDay() === 0 || dateObj.getDay() === 6;
+            let reply = `**No ❌**, ${targetDate} is not a company holiday.`;
+            if (isWeekend) {
+              reply += ` However, it is a **${dateObj.toLocaleDateString('en-US', { weekday: 'long' })}**, which is a weekend.`;
+            }
+            return res.json({
+              reply,
+              intent: 'is_holiday_no',
+              timestamp: new Date().toISOString()
+            });
+          }
+        } catch (e) {
+          return res.json({ reply: "I'm sorry, I couldn't check the holiday status.", intent: 'error' });
         }
       }
 

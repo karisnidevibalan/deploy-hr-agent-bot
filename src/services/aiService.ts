@@ -185,7 +185,18 @@ Provide exceptional, personalized HR support by understanding employee needs, an
       if (applicationIndicators.some(indicator => lowerMessage.includes(indicator)) || hasDatePattern) return 'apply_leave';
     }
 
-    if (lowerMessage.includes('holiday') && (lowerMessage.includes('list') || lowerMessage.includes('calendar') || lowerMessage.includes('show'))) return 'holiday_list';
+    const holidayKeywords = ['holiday', 'festivals', 'vacation day'];
+    if (holidayKeywords.some(k => lowerMessage.includes(k))) {
+      if (['today', 'tomorrow', 'is it', 'is today'].some(k => lowerMessage.includes(k))) return 'is_holiday';
+      if (['list', 'calendar', 'show', 'all', 'what are'].some(k => lowerMessage.includes(k))) return 'holiday_list';
+      if (['count', 'number of', 'how many'].some(k => lowerMessage.includes(k))) return 'holiday_list'; // Chat controller will handle count
+    }
+
+    // Special case for "is today leave" - treat as holiday check
+    if ((lowerMessage.includes('is today') || lowerMessage.includes('is it')) && (lowerMessage.includes('leave') || lowerMessage.includes('holiday'))) {
+      return 'is_holiday';
+    }
+
     if (lowerMessage.includes('reimbursement') || lowerMessage.includes('reimburse') || lowerMessage.includes('claim')) return 'reimbursement_info';
 
     return 'general_query';
@@ -243,7 +254,8 @@ System Intents:
 - apply_leave: User wants to request time off
 - apply_wfh: User wants to work from home
 - leave_balance: Check remaining leaves
-- holiday_list: View company holidays
+- holiday_list: View company holidays or counts
+- is_holiday: Check if a specific date (like today) is a holiday
 - leave_policy: Questions about leave policies
 - wfh_policy: Questions about WFH policies
 - reimbursement_info: Questions about reimbursements
@@ -255,7 +267,7 @@ Respond in JSON ONLY:
 {
     "intent": "<primary_intent>",
     "confidence": <0.0-1.0>,
-    "entities": {"date": "YYYY-MM-DD", "startDate": "YYYY-MM-DD", "endDate": "YYYY-MM-DD", "leaveType": "ANNUAL|SICK|CASUAL", "reason": "..."},
+    "entities": {"date": "YYYY-MM-DD", "startDate": "YYYY-MM-DD", "endDate": "YYYY-MM-DD", "leaveType": "ANNUAL|SICK|CASUAL", "reason": "...", "year": 2026},
     "suggestedActions": ["action1", "action2"]
 }`;
 
