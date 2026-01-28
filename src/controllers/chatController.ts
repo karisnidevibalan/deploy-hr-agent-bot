@@ -791,8 +791,10 @@ const chatController = async (req: Request, res: Response) => {
     const inLeaveFlow = !!leaveState.step;
     const inWfhFlow = !!wfhState.step;
 
-    // Intent Locking
-    if (inLeaveFlow && !['view_requests', 'greeting', 'holiday_list'].includes(currentIntent)) {
+    // Intent Locking & Flexible Switching
+    const hrIntents = ['apply_leave', 'apply_wfh', 'leave_balance', 'holiday_list', 'view_requests', 'reimbursement_info', 'leave_policy', 'wfh_policy'];
+
+    if (inLeaveFlow) {
       if (lowerMessage.includes('cancel') || lowerMessage.includes('stop') || lowerMessage.includes('reset')) {
         contextManager.clearAwaitingLeaveDetails(sessionId);
         return res.json({
@@ -800,8 +802,15 @@ const chatController = async (req: Request, res: Response) => {
           intent: 'cancel_flow',
         });
       }
-      currentIntent = 'apply_leave';
-    } else if (inWfhFlow && !['view_requests', 'greeting', 'holiday_list'].includes(currentIntent)) {
+
+      // If user detected a different HR intent, clear the current flow
+      if (currentIntent !== 'apply_leave' && hrIntents.includes(currentIntent)) {
+        console.log(`🔄 Switching from Leave flow to ${currentIntent}`);
+        contextManager.clearAwaitingLeaveDetails(sessionId);
+      } else if (!['view_requests', 'greeting', 'holiday_list'].includes(currentIntent)) {
+        currentIntent = 'apply_leave';
+      }
+    } else if (inWfhFlow) {
       if (lowerMessage.includes('cancel') || lowerMessage.includes('stop') || lowerMessage.includes('reset')) {
         contextManager.clearAwaitingWfhDetails(sessionId);
         return res.json({
@@ -809,7 +818,14 @@ const chatController = async (req: Request, res: Response) => {
           intent: 'cancel_flow',
         });
       }
-      currentIntent = 'apply_wfh';
+
+      // If user detected a different HR intent, clear the current flow
+      if (currentIntent !== 'apply_wfh' && hrIntents.includes(currentIntent)) {
+        console.log(`🔄 Switching from WFH flow to ${currentIntent}`);
+        contextManager.clearAwaitingWfhDetails(sessionId);
+      } else if (!['view_requests', 'greeting', 'holiday_list'].includes(currentIntent)) {
+        currentIntent = 'apply_wfh';
+      }
     }
 
     // Switch block for intent handling
