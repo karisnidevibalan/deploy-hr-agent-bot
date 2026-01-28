@@ -121,7 +121,7 @@ import entityExtractor from '../utils/entityExtractor';
 import { SalesforceService } from '../services/salesforceService';
 import { AiService } from '../services/aiService';
 import { Request, Response } from 'express';
-import holidaysJson from '../data/holidays.json';
+import { PolicyService } from '../services/policyService';
 
 const salesforceService = new SalesforceService();
 const aiService = new AiService();
@@ -300,7 +300,8 @@ async function processLeaveRequest(
   ssoContext?: { finalEmail?: string; finalName?: string }
 ): Promise<any> {
   // Block leave creation if any date is a holiday
-  const holidaysList = holidaysJson.holidays || [];
+  const holidaysData = PolicyService.getPolicy('holidays.json');
+  const holidaysList = (holidaysData.holidays || []) as any[];
   const leaveDates = [];
   const start = new Date(details.startDate!);
   const end = new Date(details.endDate || details.startDate!);
@@ -485,7 +486,8 @@ Please provide corrected dates to continue editing your leave request.`,
   if (newDetails && newDetails.startDate && newDetails.leaveType) {
     // Block confirmation if the requested date is a holiday (move BEFORE confirmation)
     newDetails.reason = newDetails.reason || 'Personal';
-    const holidaysList = holidaysJson.holidays || [];
+    const holidaysData = PolicyService.getPolicy('holidays.json');
+    const holidaysList = (holidaysData.holidays || []) as any[];
     const leaveDates = [];
     const start = new Date(newDetails.startDate);
     const end = new Date(newDetails.endDate || newDetails.startDate);
@@ -1078,14 +1080,19 @@ const chatController = async (req: Request, res: Response) => {
       }
 
       case 'holiday_list': {
-        const holidaysPath = path.join(__dirname, '../../data/holidays.json');
         try {
-          const data = fs.readFileSync(holidaysPath, 'utf-8');
-          const { holidays } = JSON.parse(data);
-          let reply = "🗓️ **2026 Company Holidays:**\n\n";
-          holidays.forEach((h: any) => {
-            reply += `• **${h.name}**: ${h.date}\n`;
-          });
+          const holidaysData = PolicyService.getPolicy('holidays.json');
+          const holidays = holidaysData.holidays || [];
+          const year = holidaysData.year || new Date().getFullYear();
+
+          let reply = `🗓️ **${year} Company Holidays:**\n\n`;
+          if (holidays.length === 0) {
+            reply = "I couldn't find any holidays for the current period.";
+          } else {
+            holidays.forEach((h: any) => {
+              reply += `• **${h.name}**: ${h.date}\n`;
+            });
+          }
           return res.json({ reply, intent: 'holiday_list', timestamp: new Date().toISOString() });
         } catch (e) {
           return res.json({ reply: "I'm sorry, I couldn't load the holiday list.", intent: 'error' });

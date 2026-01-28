@@ -7,10 +7,7 @@ const groq = new Groq({
   apiKey: process.env.GROQ_API_KEY
 });
 
-import leavePolicy from "../data/leavePolicy.json";
-import holidays from "../data/holidays.json";
-import wfhPolicy from "../data/wfhPolicy.json";
-import reimbursementPolicy from "../data/reimbursement-policy.json";
+import { PolicyService } from './policyService';
 
 export type IntentResult = {
   intent: string;
@@ -32,14 +29,19 @@ export class AiService {
   private buildSystemPrompt(conversationContext?: string): string {
     const contextInfo = conversationContext ? `\n\nConversation Context:\n${conversationContext}` : '';
 
+    const leavePolicy = PolicyService.getPolicy('leavePolicy.json');
+    const holidays = PolicyService.getPolicy('holidays.json');
+    const wfhPolicy = PolicyService.getPolicy('wfhPolicy.json');
+    const reimbursementPolicy = PolicyService.getPolicy('reimbursement-policy.json');
+
     return `You are Winfomi HR Assistant, an intelligent AI-powered HR chatbot for Winfomi Technologies.
 
 **Your Core Mission:**
 Provide exceptional, personalized HR support by understanding employee needs, answering questions accurately, and proactively guiding them through HR processes.
 
-**Available Company Policies & Data:**
+**Available Company Policies & Data**:
 - Leave Policy: ${JSON.stringify(leavePolicy, null, 2)}
-- Holiday Calendar 2026: ${JSON.stringify(holidays, null, 2)}
+- Holiday Calendar: ${JSON.stringify(holidays, null, 2)}
 - WFH Policy: ${JSON.stringify(wfhPolicy, null, 2)}
 - Reimbursement Policy: ${JSON.stringify(reimbursementPolicy, null, 2)}
 
@@ -61,7 +63,7 @@ Provide exceptional, personalized HR support by understanding employee needs, an
 
 **Smart Actions You Can Suggest:**
 - "Check your leave balance" - View remaining leaves by type
-- "View holiday calendar" - See all company holidays for 2026
+- "View holiday calendar" - See all company holidays
 - "Apply for leave" - Start leave request with date validation
 - "Request WFH" - Submit work-from-home request
 - "View my requests" - See all pending/approved requests

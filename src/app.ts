@@ -49,8 +49,16 @@ setChatRoutes(app);
 setLeaveRoutes(app);
 setWfhRoutes(app);
 
-// Existing chat route (kept for backward compatibility)
-app.post('/api/chat', chatController);
+// Multer configuration for policy uploads
+import multer from 'multer';
+import { uploadPolicyController } from './controllers/uploadController';
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 } // 5MB limit
+});
+
+// Upload policy route
+app.post('/api/upload-policy', upload.single('policyFile'), uploadPolicyController);
 
 // Manager approval routes (email links)
 app.get('/manager-dashboard', (req: Request, res: Response) => {

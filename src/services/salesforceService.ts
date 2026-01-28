@@ -871,9 +871,16 @@ export class SalesforceService {
             return 0;
         }
 
-        const diffInMs = end.getTime() - start.getTime();
-        const diffInDays = Math.floor(diffInMs / (24 * 60 * 60 * 1000));
-        return diffInDays >= 0 ? diffInDays + 1 : 0;
+        let count = 0;
+        const cur = new Date(start);
+        while (cur <= end) {
+            const dayOfWeek = cur.getDay();
+            if (dayOfWeek !== 0 && dayOfWeek !== 6) { // Skip Sat (6) and Sun (0)
+                count++;
+            }
+            cur.setDate(cur.getDate() + 1);
+        }
+        return count;
     }
 
     private restoreMockLeaveUsage(leaveType: string, startDate: string, endDate: string): void {

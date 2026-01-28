@@ -91,10 +91,67 @@
             background: #f1f5f9;
             color: var(--brand);
         }
+
+        .policy-type-modal {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            padding: 24px;
+            border-radius: 12px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+            z-index: 10000;
+            display: none;
+            flex-direction: column;
+            gap: 16px;
+            width: 300px;
+        }
+
+        .policy-type-modal h3 {
+            margin: 0;
+            font-size: 18px;
+            color: var(--brand);
+        }
+
+        .policy-type-modal select {
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid #e2e8f0;
+        }
+
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.4);
+            z-index: 9999;
+            display: none;
+        }
     </style>
 </head>
 
 <body>
+
+    <div class="modal-overlay" id="modalOverlay"></div>
+    <div class="policy-type-modal" id="policyTypeModal">
+        <h3>Select Policy Type</h3>
+        <p style="font-size: 13px; color: var(--muted); margin: -8px 0 0 0;">What kind of policy are you uploading?</p>
+        <select id="policyTypeSelect">
+            <option value="leave">Leave Policy</option>
+            <option value="holiday">Holiday List</option>
+            <option value="wfh">WFH Policy</option>
+            <option value="reimbursement">Reimbursement Policy</option>
+        </select>
+        <div style="display: flex; gap: 10px; margin-top: 8px;">
+            <button onclick="confirmPolicyUpload()" class="btn-save"
+                style="flex: 1; padding: 10px; border-radius: 8px; border: none; cursor: pointer;">Upload</button>
+            <button onclick="closePolicyModal()" class="btn-cancel"
+                style="flex: 1; padding: 10px; border-radius: 8px; border: none; cursor: pointer;">Cancel</button>
+        </div>
+    </div>
 
     <!-- Bot Launcher Button -->
     <div class="bot-launcher" id="botLauncher" onclick="toggleBot()">
@@ -131,6 +188,9 @@
 
         <div class="input-container">
             <button id="ttsButton" class="tts-button" title="Toggle Voice" onclick="toggleTTS()">🔊</button>
+            <input type="file" id="policyUploadInput" style="display:none" onchange="handlePolicyFileUpload(event)">
+            <label for="policyUploadInput" class="mic-button" title="Upload & Update Policy"
+                style="cursor:pointer; font-size: 18px;">📎</label>
             <input type="text" id="messageInput" class="message-input" placeholder="Ask about leave, WFH..."
                 onkeypress="handleKeyPress(event)" autocomplete="off">
             <button id="micButton" class="mic-button" title="Speak" onclick="toggleSpeechRecognition()">🎤</button>
@@ -396,6 +456,70 @@
             recognition.onend = () => { document.getElementById('micButton').style.color = 'var(--brand)'; };
         }
         function toggleSpeechRecognition() { if (recognition) recognition.start(); }
+
+        // --- Policy Upload Functions ---
+        let selectedPolicyFile = null;
+
+        function handlePolicyFileUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            selectedPolicyFile = file;
+            document.getElementById('modalOverlay').style.display = 'block';
+            document.getElementById('policyTypeModal').style.display = 'flex';
+        }
+
+        function closePolicyModal() {
+            document.getElementById('modalOverlay').style.display = 'none';
+            document.getElementById('policyTypeModal').style.display = 'none';
+            document.getElementById('policyUploadInput').value = '';
+            selectedPolicyFile = null;
+        }
+
+        async function confirmPolicyUpload() {
+            if (!selectedPolicyFile) return;
+
+            const policyType = document.getElementById('policyTypeSelect').value;
+            const formData = new FormData();
+            formData.append('policyFile', selectedPolicyFile);
+            formData.append('policyType', policyType);
+
+            closePolicyModal();
+
+            const loading = document.getElementById('loadingDiv');
+            loading.innerText = '⏳ Updating policy...';
+            loading.style.display = 'block';
+
+            try {
+                const urlParams = new URLSearchParams(window.location.search);
+                const ssoEmail = urlParams.get('email');
+                const ssoName = urlParams.get('name');
+
+                const response = await fetch('/api/upload-policy', {
+                    method: 'POST',
+                    headers: {
+                        'x-user-email': ssoEmail || '',
+                        'x-user-name': ssoName || ''
+                    },
+                    body: formData
+                });
+
+                const data = await response.json();
+                if (data.reply) {
+                    addMessage(data.reply);
+                } else if (response.status === 403) {
+                    addMessage('⚠️ You are not authorized to update policies. Only Jashwanth M is authorized.');
+                } else {
+                    addMessage('❌ Failed to update policy. Please try again.');
+                }
+            } catch (err) {
+                console.error(err);
+                addMessage('❌ Error uploading document.');
+            } finally {
+                loading.innerText = '🤔 Thinking...';
+                loading.style.display = 'none';
+            }
+        }
 
     </script>
 </body>

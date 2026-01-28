@@ -155,7 +155,7 @@ export class DateParserService {
     return format(parsed, 'MMMM d, yyyy');
   }
 
-  calculateInclusiveDays(startDate: string, endDate: string, isHalfDay = false): number {
+  calculateInclusiveDays(startDate: string, endDate: string, isHalfDay = false, excludeWeekends = true): number {
     const startParsed = this.tryParseISO(startDate);
     const endParsed = this.tryParseISO(endDate);
 
@@ -167,9 +167,19 @@ export class DateParserService {
       return 0.5;
     }
 
-    // Always at least 1 for same-day leave
-    const diff = differenceInCalendarDays(endParsed, startParsed) + 1;
-    return diff >= 1 ? diff : 1;
+    let count = 0;
+    const cur = new Date(startParsed);
+    const end = new Date(endParsed);
+
+    while (cur <= end) {
+      const day = cur.getDay();
+      if (!excludeWeekends || (day !== 0 && day !== 6)) {
+        count++;
+      }
+      cur.setDate(cur.getDate() + 1);
+    }
+
+    return count;
   }
 
   projectEndDate(startDate: string, durationDays: number): string {
