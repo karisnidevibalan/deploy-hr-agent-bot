@@ -62,7 +62,7 @@ app.post('/api/upload-policy', upload.single('policyFile'), uploadPolicyControll
 
 // Manager approval routes (email links)
 app.get('/manager-dashboard', (req: Request, res: Response) => {
-  res.sendFile(path.join(__dirname, '../public/manager-dashboard.html'));
+  res.sendFile(path.join(process.cwd(), 'public', 'manager-dashboard.html'));
 });
 app.get('/approve', async (req: Request, res: Response) => {
   try {
@@ -234,7 +234,7 @@ app.get('/api/health', (req: Request, res: Response) => {
 
 // Serve the chat interface
 app.get('/', (req: Request, res: Response) => {
-  res.sendFile(path.join(__dirname, '../public/index.html'));
+  res.sendFile(path.join(process.cwd(), 'public', 'index.html'));
 });
 
 // Manager dashboard routes
