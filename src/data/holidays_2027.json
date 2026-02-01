@@ -34,7 +34,7 @@
     {
       "date": "2027-04-02",
       "name": "Good Friday",
-      "day": "Friday",
+      "day": "Saturday",
       "type": "Religious Holiday"
     },
     {
@@ -52,13 +52,13 @@
     {
       "date": "2027-08-15",
       "name": "Independence Day",
-      "day": "Sunday",
+      "day": "Monday",
       "type": "National Holiday"
     },
     {
       "date": "2027-08-18",
       "name": "Ganesh Chaturthi",
-      "day": "Wednesday",
+      "day": "Thursday",
       "type": "Festival"
     },
     {

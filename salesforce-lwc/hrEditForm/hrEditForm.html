@@ -1,0 +1,38 @@
+<template>
+    <div class="edit-form-modal">
+        <h4>{formTitle}</h4>
+
+        <!-- Leave Type (only for Leave requests) -->
+        <template if:false={isWfh}>
+            <label>Leave Type</label>
+            <lightning-combobox name="leaveType" value={leaveType} placeholder="Select Leave Type"
+                options={leaveTypeOptions} onchange={handleLeaveTypeChange} class="form-field">
+            </lightning-combobox>
+        </template>
+
+        <!-- Date Range -->
+        <div class="date-row">
+            <div class="date-field">
+                <label>Start Date</label>
+                <lightning-input type="date" value={startDate} onchange={handleStartDateChange} class="form-field">
+                </lightning-input>
+            </div>
+            <div class="date-field">
+                <label>End Date</label>
+                <lightning-input type="date" value={endDate} onchange={handleEndDateChange} class="form-field">
+                </lightning-input>
+            </div>
+        </div>
+
+        <!-- Reason -->
+        <label>Reason</label>
+        <lightning-textarea value={reason} onchange={handleReasonChange} rows="3" class="form-field">
+        </lightning-textarea>
+
+        <!-- Action Buttons -->
+        <div class="form-actions">
+            <button class="btn-save" onclick={handleSave}>Save changes</button>
+            <button class="btn-cancel" onclick={handleCancel}>Cancel</button>
+        </div>
+    </div>
+</template>

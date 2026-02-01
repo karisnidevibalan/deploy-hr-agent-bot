@@ -819,12 +819,21 @@ const chatController = async (req: Request, res: Response) => {
         });
       }
 
-      // If user detected a different HR intent, clear the current flow
-      if (currentIntent !== 'apply_wfh' && hrIntents.includes(currentIntent)) {
-        console.log(`🔄 Switching from WFH flow to ${currentIntent}`);
-        contextManager.clearAwaitingWfhDetails(sessionId);
-      } else if (!['view_requests', 'greeting', 'holiday_list'].includes(currentIntent)) {
+      // STRICTLY TARGETED GUARD: If we are waiting for a WFH reason, don't context switch unless explicitly requested
+      // This specifically prevents "fever" (sick leave indicator) from switching flows when asking for WFH reason
+      const isSwitchingToLeave = currentIntent === 'apply_leave' && !lowerMessage.includes('apply') && !lowerMessage.includes('leave');
+
+      if (wfhState.step === 'reason' && isSwitchingToLeave) {
+        console.log('🛡️ Guarding WFH flow: Treating potential leave intent as WFH reason');
         currentIntent = 'apply_wfh';
+      } else {
+        // If user detected a different HR intent, clear the current flow
+        if (currentIntent !== 'apply_wfh' && hrIntents.includes(currentIntent)) {
+          console.log(`🔄 Switching from WFH flow to ${currentIntent}`);
+          contextManager.clearAwaitingWfhDetails(sessionId);
+        } else if (!['view_requests', 'greeting', 'holiday_list'].includes(currentIntent)) {
+          currentIntent = 'apply_wfh';
+        }
       }
     }
 
@@ -960,7 +969,16 @@ const chatController = async (req: Request, res: Response) => {
         const entities = analysis.entities || {};
 
         if (currentStep === 'start' || currentStep === 'date') {
-          const date = entities.date || entities.startDate || extractWfhDetails(message).date;
+          // TARGETED FIX: If the message is exactly the button payload, force asking for date
+          // This prevents "I want to apply for WFH" from inferring today's date via AI/Extractor defaults
+          const isButtonPayload = lowerMessage.includes('i want to apply for wfh');
+
+          let date = entities.date || entities.startDate || extractWfhDetails(message).date;
+
+          if (currentStep === 'start' && isButtonPayload) {
+            date = null;
+          }
+
           if (date) {
             if (dateParser.isPastDate(date)) {
               return res.json({
@@ -1100,21 +1118,52 @@ const chatController = async (req: Request, res: Response) => {
           const holidaysData = PolicyService.getAllHolidays();
           let holidays = holidaysData.holidays || [];
           const queryYear = analysis.entities?.year;
-          const lowerMsg = message.toLowerCase();
-          const isCountQuery = lowerMsg.includes('how many') || lowerMsg.includes('count') || lowerMsg.includes('number of') || lowerMsg.includes('total');
+          const queryMonth = analysis.entities?.month;
+          const startDate = analysis.entities?.startDate;
+          const endDate = analysis.entities?.endDate;
 
-          if (queryYear) {
+          const lowerMsg = message.toLowerCase();
+          const isCountQuery = lowerMsg.includes('how many') || lowerMsg.includes('count') || lowerMsg.includes('number of') || lowerMsg.includes('total') || lowerMsg.includes('no of');
+
+          if (startDate && endDate) {
+            const start = new Date(startDate).getTime();
+            const end = new Date(endDate).getTime();
+            holidays = holidays.filter((h: any) => {
+              const hDate = new Date(h.date).getTime();
+              return hDate >= start && hDate <= end;
+            });
+          } else if (queryMonth) {
+            // Fallback if only month index provided without dates (should be rare with new AiService)
+            holidays = holidays.filter((h: any) => {
+              const hDate = new Date(h.date);
+              return !isNaN(hDate.getTime()) && (hDate.getMonth() + 1) === queryMonth;
+            });
+          } else if (queryYear) {
             holidays = holidays.filter((h: any) => h.date.startsWith(queryYear.toString()));
           }
 
           if (holidays.length === 0) {
-            return res.json({ reply: `I couldn't find any holidays for ${queryYear || 'the current period'}.`, intent: 'holiday_list', timestamp: new Date().toISOString() });
+            let period = queryYear || 'the current period';
+            if (startDate) period = `${startDate} to ${endDate}`;
+            else if (queryMonth) period = `this month (${queryMonth}/${queryYear || new Date().getFullYear()})`;
+
+            return res.json({ reply: `I couldn't find any holidays for ${period}.`, intent: 'holiday_list', timestamp: new Date().toISOString() });
           }
 
           if (isCountQuery) {
-            const yearText = queryYear ? ` in ${queryYear}` : "";
+            let periodText = "";
+            if (startDate) {
+              if (lowerMsg.includes('week')) periodText = " in this week"; // Contextual polish
+              else periodText = ` from ${startDate} to ${endDate}`;
+            } else if (queryMonth) {
+              const monthName = new Date(2000, queryMonth - 1).toLocaleString('default', { month: 'long' });
+              periodText = ` in ${monthName}${queryYear ? ' ' + queryYear : ''}`;
+            } else if (queryYear) {
+              periodText = ` in ${queryYear}`;
+            }
+
             return res.json({
-              reply: `There are **${holidays.length}** company holidays${yearText}.`,
+              reply: `There are **${holidays.length}** company holidays${periodText}.`,
               intent: 'holiday_count',
               timestamp: new Date().toISOString()
             });

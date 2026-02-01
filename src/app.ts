@@ -28,8 +28,43 @@ const PORT = process.env.PORT || 5000;
 
 // CommonJS: __filename and __dirname are available by default
 
-// Middleware
-app.use(cors());
+// Middleware - Enhanced CORS for Salesforce integration
+const corsOptions = {
+  origin: function (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+
+    // Allow Salesforce domains for LWC integration
+    const allowedDomains = [
+      /\.force\.com$/,
+      /\.salesforce\.com$/,
+      /\.visualforce\.com$/,
+      /\.lightning\.force\.com$/,
+      /localhost/,
+      /127\.0\.0\.1/
+    ];
+
+    const isAllowed = allowedDomains.some(domain => {
+      if (domain instanceof RegExp) {
+        return domain.test(origin);
+      }
+      return origin.includes(domain);
+    });
+
+    if (isAllowed) {
+      callback(null, true);
+    } else {
+      // Still allow the request but log it
+      console.log(`⚠️ CORS request from non-whitelisted origin: ${origin}`);
+      callback(null, true); // Allow all origins for now, can be restricted later
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Session-Id', 'x-user-name', 'x-user-email']
+};
+
+app.use(cors(corsOptions));
 app.use(express.json());
 // Use process.cwd() to correctly locate public folder in both Dev (src/) and Prod (dist/src/)
 app.use(express.static(path.join(process.cwd(), 'public')));

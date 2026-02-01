@@ -293,7 +293,7 @@
                     showQuickActions();
                 }
 
-                if (data.showButtons) addConfirmationButtons();
+                if (data.showButtons) addConfirmationButtons(data.intent);
                 if (data.intent && ['leave_created', 'wfh_created', 'confirmation_no'].includes(data.intent)) {
                     removeConfirmationButtons();
                     removeEditForm();

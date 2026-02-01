@@ -42,6 +42,7 @@ Provide exceptional, personalized HR support by understanding employee needs, an
 **Available Company Policies & Data**:
 - Leave Policy: ${JSON.stringify(leavePolicy, null, 2)}
 - Holiday Calendar: ${JSON.stringify(holidays, null, 2)}
+- **Weekly Offs**: Standard work week is Monday to Friday. Saturday and Sunday are weekly off days.
 - WFH Policy: ${JSON.stringify(wfhPolicy, null, 2)}
 - Reimbursement Policy: ${JSON.stringify(reimbursementPolicy, null, 2)}
 
@@ -60,6 +61,7 @@ Provide exceptional, personalized HR support by understanding employee needs, an
 - Always validate dates and provide specific policy details when relevant
 - If information is incomplete, ask clarifying questions naturally
 - Proactively mention related information that might be helpful
+- **Contextual Filtering**: If the user asks about holidays in a specific period (e.g., 'this week', 'next month'), ONLY list holidays for that period. Do NOT show the full annual calendar.
 
 **Smart Actions You Can Suggest:**
 - "Check your leave balance" - View remaining leaves by type
@@ -175,7 +177,18 @@ Provide exceptional, personalized HR support by understanding employee needs, an
     }
 
     // 4. Enhanced leave detection
-    const hasLeaveKeyword = lowerMessage.includes('leave') || lowerMessage.includes('holiday');
+    // Note: Check for holiday keywords first to avoid misclassification if "leave" is used in "holiday leave" context incorrectly, 
+    // but usually "leave" takes precedence for application. 
+    // However, if user asks "is today a leave", it might mean "is it a holiday".
+
+    const holidayKeywords = ['holiday', 'festivals', 'vacation day'];
+    if (holidayKeywords.some(k => lowerMessage.includes(k))) {
+      if (['today', 'tomorrow', 'is it', 'is today'].some(k => lowerMessage.includes(k))) return 'is_holiday';
+      if (['list', 'calendar', 'show', 'all', 'what are'].some(k => lowerMessage.includes(k))) return 'holiday_list';
+      if (['count', 'number of', 'how many', 'no of', 'total'].some(k => lowerMessage.includes(k))) return 'holiday_list';
+    }
+
+    const hasLeaveKeyword = lowerMessage.includes('leave') || lowerMessage.includes('holiday'); // Fallback if not caught above
     if (hasLeaveKeyword) {
       if (['balance', 'remaining', 'left', 'available', 'check leave', 'status', 'how many', 'count'].some(k => lowerMessage.includes(k))) return 'leave_balance';
       if (['policy', 'what is', 'explain', 'rules'].some(k => lowerMessage.includes(k))) return 'leave_policy';
@@ -183,13 +196,6 @@ Provide exceptional, personalized HR support by understanding employee needs, an
       const applicationIndicators = ['apply', 'want', 'need', 'take', 'request', 'submit', 'tomorrow', 'next week'];
       const hasDatePattern = /\d{1,2}(th|st|nd|rd)/i.test(lowerMessage) || /\d{1,2}[.\-/]\d{1,2}/.test(lowerMessage);
       if (applicationIndicators.some(indicator => lowerMessage.includes(indicator)) || hasDatePattern) return 'apply_leave';
-    }
-
-    const holidayKeywords = ['holiday', 'festivals', 'vacation day'];
-    if (holidayKeywords.some(k => lowerMessage.includes(k))) {
-      if (['today', 'tomorrow', 'is it', 'is today'].some(k => lowerMessage.includes(k))) return 'is_holiday';
-      if (['list', 'calendar', 'show', 'all', 'what are'].some(k => lowerMessage.includes(k))) return 'holiday_list';
-      if (['count', 'number of', 'how many'].some(k => lowerMessage.includes(k))) return 'holiday_list'; // Chat controller will handle count
     }
 
     // Special case for "is today leave" - treat as holiday check
@@ -208,7 +214,98 @@ Provide exceptional, personalized HR support by understanding employee needs, an
 
     // 2. Aggressive Fast-Track (Bypass AI for simple requests OR requests with clear entities)
     if (['view_requests', 'holiday_list', 'greeting'].includes(detectedIntent)) {
-      return { intent: detectedIntent, confidence: 1.0, entities: {}, suggestedActions: [] };
+      const entities: any = {};
+
+      // Basic entity extraction for holiday_list fast-track
+      if (detectedIntent === 'holiday_list') {
+        const lowerMsg = message.toLowerCase();
+        const currentYear = new Date().getFullYear();
+
+        // Year extraction
+        const yearMatch = lowerMsg.match(/\b20\d{2}\b/);
+        if (yearMatch) {
+          entities.year = parseInt(yearMatch[0], 10);
+        } else if (lowerMsg.includes('this year')) {
+          entities.year = currentYear;
+        } else if (lowerMsg.includes('next year')) {
+          entities.year = currentYear + 1;
+        } else if (lowerMsg.includes('last year')) {
+          entities.year = currentYear - 1;
+        }
+
+        // Generic Date Helper
+        const getStartEndForMonth = (year: number, month: number) => {
+          // month is 1-indexed
+          const startDate = new Date(year, month - 1, 1);
+          const endDate = new Date(year, month, 0); // Last day of month
+          // Adjust for timezone offset issues by manually formatting
+          const fmt = (d: Date) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+          return { startDate: fmt(startDate), endDate: fmt(endDate) };
+        };
+
+        // Month extraction
+        if (lowerMsg.includes('month')) {
+          if (lowerMsg.includes('this month') || lowerMsg.includes('current month')) {
+            const now = new Date();
+            entities.period = 'this_month';
+            entities.month = now.getMonth() + 1;
+            entities.year = entities.year || now.getFullYear();
+            const range = getStartEndForMonth(entities.year, entities.month);
+            entities.startDate = range.startDate;
+            entities.endDate = range.endDate;
+          } else if (lowerMsg.includes('next month')) {
+            const d = new Date();
+            d.setMonth(d.getMonth() + 1); // Automatically handles year rollover
+            entities.period = 'custom';
+            entities.month = d.getMonth() + 1;
+            entities.year = d.getFullYear(); // Update year if rolled over
+            const range = getStartEndForMonth(entities.year, entities.month);
+            entities.startDate = range.startDate;
+            entities.endDate = range.endDate;
+          } else {
+            // Check for specific month names
+            const months = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
+            const monthIndex = months.findIndex(m => lowerMsg.includes(m));
+            if (monthIndex !== -1) {
+              entities.period = 'custom';
+              entities.month = monthIndex + 1;
+              entities.year = entities.year || currentYear;
+              const range = getStartEndForMonth(entities.year, entities.month);
+              entities.startDate = range.startDate;
+              entities.endDate = range.endDate;
+            }
+          }
+        }
+
+        // Week extraction
+        if (lowerMsg.includes('week')) {
+          const today = new Date();
+          const currentDay = today.getDay(); // 0 = Sunday, 1 = Monday...
+          // Assumption: Week starts Monday, ends Sunday for "this week" context in business
+          // OR: starts Sunday. Let's assume standard ISO-like: Today to end of week?
+          // "Holidays in this week" usually means the full week containing today.
+
+          const diffToMon = today.getDate() - currentDay + (currentDay === 0 ? -6 : 1); // adjust when day is sunday
+          const monday = new Date(today.setDate(diffToMon));
+          const sunday = new Date(new Date(monday).setDate(monday.getDate() + 6)); // Create new date object for sunday to avoid modifying monday
+
+          const fmt = (d: Date) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+
+          if (lowerMsg.includes('this week')) {
+            entities.period = 'this_week';
+            entities.startDate = fmt(monday);
+            entities.endDate = fmt(sunday);
+          } else if (lowerMsg.includes('next week')) {
+            entities.period = 'next_week';
+            monday.setDate(monday.getDate() + 7);
+            sunday.setDate(sunday.getDate() + 7);
+            entities.startDate = fmt(monday);
+            entities.endDate = fmt(sunday);
+          }
+        }
+      }
+
+      return { intent: detectedIntent, confidence: 1.0, entities, suggestedActions: [] };
     }
 
     // 3. Rule-based extraction (Check if we can fulfill without AI)

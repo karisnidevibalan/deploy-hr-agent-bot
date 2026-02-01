@@ -1,0 +1,1262 @@
+<apex:page showHeader="false" sidebar="false" standardStylesheets="false" applyHtmlTag="false" applyBodyTag="false" docType="html-5.0">
+    <html>
+
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>HR Bot - People Portal</title>
+        <style>
+            /* <![CDATA[ */
+            /* INLINED ui.css */
+            /* Floating action bar inside chat container, above input */
+            .chat-action-bar {
+                position: absolute;
+                left: 0;
+                right: 0;
+                bottom: 90px;
+                /* Height above input bar */
+                display: flex;
+                justify-content: flex-end;
+                gap: 10px;
+                padding: 0 24px;
+                z-index: 50;
+            }
+
+            @media (max-width: 800px) {
+                .chat-action-bar {
+                    bottom: 110px;
+                    padding: 0 8px;
+                }
+            }
+
+            /* Floating, send, mic, and speech buttons (ChatGPT style) - REDUCED SIZE */
+            .send-button,
+            #micButton,
+            #ttsToggle {
+                background: var(--accent);
+                color: #fff;
+                border: none;
+                border-radius: 6px;
+                padding: 8px 12px;
+                font-weight: 600;
+                font-size: 0.95rem;
+                cursor: pointer;
+                transition: background 0.18s;
+                box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+                margin-left: 4px;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+            }
+
+            .send-button:hover,
+            #micButton:hover,
+            #ttsToggle:hover {
+                background: var(--accent-700);
+                color: #fff;
+            }
+
+            #micButton.active {
+                background: #ef4444 !important;
+                color: #fff;
+                animation: pulse 1.5s infinite;
+            }
+
+            #ttsToggle.active {
+                background: #444654 !important;
+                color: var(--accent);
+            }
+
+            /* Make the loading bar full width */
+            #loading {
+                width: 100vw;
+                position: relative;
+                left: 50%;
+                right: 50%;
+                margin-left: -50vw;
+                margin-right: -50vw;
+                box-sizing: border-box;
+            }
+
+            /* Subtitle for chatbot */
+            .subtitle {
+                text-align: center;
+                color: var(--muted);
+                font-size: 1.1em;
+                margin-bottom: 10px;
+            }
+
+            /* Always-visible quick actions at top */
+            .quick-actions.always-visible {
+                display: flex;
+                gap: 12px;
+                justify-content: center;
+                padding: 18px 0 0 0;
+                background: #f8fafc;
+                border-bottom: 1px solid #e6edf3;
+            }
+
+            /* Quick reply buttons and general button style (ChatGPT style) */
+            .quick-replies {
+                display: flex;
+                gap: 10px;
+                margin-top: 12px;
+                justify-content: flex-end;
+            }
+
+            .quick-replies button,
+            .btn,
+            .send-button,
+            .quick-button {
+                background: #444654;
+                color: #ececf1;
+                border: 1.5px solid #22232b;
+                border-radius: 8px;
+                padding: 10px 20px;
+                font-weight: 500;
+                font-size: 1rem;
+                cursor: pointer;
+                transition: background 0.18s, color 0.18s, border 0.18s, box-shadow 0.18s;
+                box-shadow: none;
+                outline: none;
+                margin: 0 2px;
+                display: inline-block;
+            }
+
+            .quick-replies button:hover,
+            .btn:hover,
+            .send-button:hover,
+            .quick-button:hover {
+                background: var(--accent);
+                color: #fff;
+                border-color: var(--accent);
+            }
+
+            .quick-replies button:active,
+            .btn:active,
+            .send-button:active,
+            .quick-button:active {
+                background: #22232b;
+                color: var(--brand);
+                border-color: var(--accent-700);
+            }
+
+            .send-button {
+                margin-left: 8px;
+                padding: 0;
+            }
+
+            .btn-approve {
+                background: var(--accent);
+                color: #fff;
+                border: 1.5px solid var(--accent);
+            }
+
+            .btn-approve:hover {
+                background: #22232b;
+                color: var(--accent);
+                border-color: var(--accent);
+            }
+
+            .btn-reject {
+                background: #ef4444;
+                color: #fff;
+                border: 1.5px solid #ef4444;
+            }
+
+            .btn-reject:hover {
+                background: #22232b;
+                color: #ef4444;
+                border-color: #ef4444;
+            }
+
+            /* Shared UI for Winfomi HR Agent - clean, professional, responsive */
+            :root {
+                --bg-1: #ffffff;
+                --panel-bg: #ffffff;
+                --muted: #6b7280;
+                --accent: #0066cc;
+                /* Winfomi solid blue */
+                --accent-light: #cfe2ff;
+                /* User bubble blue */
+                --accent-700: #0052a3;
+                --accent-warm: #f97316;
+                --brand: #1e293b;
+                --radius-lg: 12px;
+                --radius-md: 8px;
+                --glass: rgba(255, 255, 255, 0.95);
+                --shadow-1: 0 4px 12px rgba(0, 0, 0, 0.08);
+            }
+
+            /*******************************************************
+        * FLOATING WIDGET LAYOUT
+        *******************************************************/
+
+            .bot-launcher {
+                position: fixed;
+                bottom: 24px;
+                right: 24px;
+                width: 60px;
+                height: 60px;
+                border-radius: 50%;
+                background: var(--accent);
+                color: white;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 28px;
+                cursor: pointer;
+                box-shadow: var(--shadow-1);
+                z-index: 9999;
+                transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            }
+
+            .bot-launcher:hover {
+                transform: scale(1.05);
+            }
+
+            .container {
+                position: fixed;
+                bottom: 100px;
+                right: 24px;
+                width: 420px;
+                max-width: calc(100vw - 48px);
+                height: 650px;
+                max-height: calc(100vh - 140px);
+                background: var(--panel-bg);
+                border-radius: var(--radius-lg);
+                box-shadow: var(--shadow-1);
+                overflow: hidden;
+                display: none;
+                /* Toggled via JS */
+                flex-direction: column;
+                z-index: 9998;
+                border: 1px solid rgba(0, 0, 0, 0.05);
+                animation: slideUp 0.3s ease-out;
+            }
+
+            @keyframes slideUp {
+                from {
+                    opacity: 0;
+                    transform: translateY(20px);
+                }
+
+                to {
+                    opacity: 1;
+                    transform: translateY(0);
+                }
+            }
+
+            .container.open {
+                display: flex;
+            }
+
+            .header {
+                padding: 16px 20px;
+                background: var(--accent);
+                /* Winfomi solid blue header */
+                color: white;
+                display: flex;
+                flex-direction: column;
+                gap: 2px;
+            }
+
+            .header h1 {
+                margin: 0;
+                font-size: 17px;
+                font-weight: 700;
+                color: white;
+            }
+
+            .header p {
+                margin: 0;
+                opacity: 0.9;
+                font-size: 13px;
+                font-weight: 500;
+            }
+
+            .chat-container {
+                flex: 1;
+                padding: 20px;
+                background: #ffffff;
+                overflow-y: auto;
+                display: flex;
+                flex-direction: column;
+                gap: 12px;
+            }
+
+            .message {
+                padding: 10px 14px;
+                border-radius: var(--radius-lg);
+                max-width: 85%;
+                font-size: 0.95em;
+                line-height: 1.5;
+                position: relative;
+                margin-bottom: 4px;
+                transition: transform 0.2s;
+            }
+
+            .message-time {
+                display: block;
+                font-size: 0.7em;
+                opacity: 0.6;
+                margin-top: 4px;
+                text-align: right;
+                font-weight: 400;
+            }
+
+            @keyframes fadeIn {
+                from {
+                    opacity: 0;
+                }
+
+                to {
+                    opacity: 1;
+                }
+            }
+
+            .bot-message {
+                background: #f4f4f4;
+                /* Milder light gray bot bubble */
+                border: none;
+                color: var(--brand);
+                border-bottom-left-radius: 4px;
+            }
+
+            .user-message {
+                background: var(--accent-light);
+                /* Light blue user bubble */
+                color: #1e293b;
+                margin-left: auto;
+                text-align: left;
+                border: none;
+                border-bottom-right-radius: 4px;
+            }
+
+            .message strong {
+                display: none;
+                /* Hide 'Bot:' and 'You:' labels for a cleaner look */
+            }
+
+            /* Confirmation prompt styling */
+            .confirmation-prompt {
+                background: linear-gradient(180deg, #f0fdf4 0%, #dcfce7 100%);
+                border: 1px solid rgba(16, 185, 129, 0.2);
+                padding: 16px !important
+            }
+
+            .confirm-btn {
+                padding: 8px 16px;
+                border: none;
+                border-radius: 6px;
+                cursor: pointer;
+                font-weight: 600;
+                font-size: 14px;
+                transition: all 0.2s ease;
+                background: #10b981;
+                color: white;
+            }
+
+            .confirm-btn:hover {
+                transform: translateY(-1px);
+                box-shadow: 0 6px 16px rgba(16, 185, 129, 0.2)
+            }
+
+            .confirm-btn:active {
+                transform: translateY(0)
+            }
+
+            .reject-btn {
+                background: #ef4444;
+                box-shadow: 0 4px 12px rgba(239, 68, 68, 0.15)
+            }
+
+            .reject-btn:hover {
+                box-shadow: 0 6px 16px rgba(239, 68, 68, 0.2)
+            }
+
+            .edit-btn {
+                background: #f59e0b;
+                box-shadow: 0 4px 12px rgba(245, 158, 11, 0.15)
+            }
+
+            .edit-btn:hover {
+                box-shadow: 0 6px 16px rgba(245, 158, 11, 0.2)
+            }
+
+            .edit-form-container {
+                background: rgb(251, 252, 253);
+                border: 1px solid rgba(59, 130, 246, 0.08);
+                padding: 22px 20px;
+                margin-top: 6px;
+            }
+
+            .edit-form {
+                display: flex;
+                flex-direction: column;
+                gap: 7px;
+                margin-top: 6px
+            }
+
+            .edit-form h4 {
+                margin: 0;
+                font-size: 18px;
+                font-weight: 700;
+                color: var(--brand)
+            }
+
+            .edit-form label {
+                font-weight: 600;
+                font-size: 14px;
+                color: var(--brand);
+                margin-bottom: 2px;
+            }
+
+            .edit-form input,
+            .edit-form select,
+            .edit-form textarea {
+                padding: 7px 10px;
+                border: 1.2px solid #e6edf3;
+                border-radius: 8px;
+                font-size: 15px;
+                transition: border 0.2s ease, box-shadow 0.2s ease;
+                background: #ffffff
+            }
+
+            .edit-form input:focus,
+            .edit-form select:focus,
+            .edit-form textarea:focus {
+                outline: none;
+                border-color: var(--accent);
+                box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12)
+            }
+
+            .edit-form textarea {
+                min-height: 70px;
+                resize: vertical
+            }
+
+            .edit-form-actions {
+                display: flex;
+                gap: 8px;
+                margin-top: 4px;
+                flex-wrap: wrap
+            }
+
+            .confirm-btn.secondary-btn {
+                background: #e2e8f0;
+                color: #1f2937;
+                box-shadow: 0 4px 12px rgba(148, 163, 184, 0.15)
+            }
+
+            .confirm-btn.secondary-btn:hover {
+                box-shadow: 0 6px 16px rgba(148, 163, 184, 0.2)
+            }
+
+            .input-container {
+                display: flex;
+                gap: 8px;
+                padding: 16px 20px;
+                border-top: 1px solid #f1f5f9;
+                align-items: center;
+                background: white;
+            }
+
+            .message-input {
+                flex: 1;
+                padding: 10px 14px;
+                border: 1px solid #e2e8f0;
+                border-radius: 20px;
+                font-size: 14px;
+                outline: none;
+                background: #f8fafc;
+            }
+
+            .message-input:focus {
+                border-color: var(--accent);
+                background: white;
+            }
+
+            .mic-button,
+            .tts-button,
+            .send-button {
+                width: 32px;
+                height: 32px;
+                border-radius: 6px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                cursor: pointer;
+                border: none;
+                transition: all 0.2s ease;
+                background: #f1f5f9;
+                font-size: 14px;
+                color: var(--brand);
+            }
+
+            .send-button {
+                background: var(--accent);
+                color: white;
+            }
+
+            .send-button:after {
+                content: "→";
+                font-weight: 700;
+            }
+
+            .mic-button:hover,
+            .tts-button:hover {
+                background: #e2e8f0;
+            }
+
+            .send-button:hover {
+                background: var(--accent-700);
+                transform: scale(1.05);
+            }
+
+            /* Quick Action Pills */
+            .quick-actions-container {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 8px;
+                margin-top: 10px;
+                margin-bottom: 4px;
+            }
+
+            .quick-action-pill {
+                background: white;
+                border: 1px solid var(--accent);
+                color: var(--accent);
+                padding: 4px 10px;
+                border-radius: 6px;
+                font-size: 12px;
+                font-weight: 600;
+                cursor: pointer;
+                transition: all 0.2s ease;
+                white-space: nowrap;
+            }
+
+            .quick-action-pill:hover {
+                background: var(--accent);
+                color: white;
+                box-shadow: 0 4px 10px rgba(52, 82, 180, 0.2);
+            }
+
+            @keyframes pulse {
+
+                0%,
+                100% {
+                    opacity: 1;
+                }
+
+                50% {
+                    opacity: 0.6;
+                }
+            }
+
+            .loading {
+                display: none;
+                text-align: center;
+                color: var(--muted);
+                font-style: italic;
+                padding: 8px
+            }
+
+            .quick-actions {
+                padding: 18px;
+                border-top: 1px solid #eef2fb;
+                background: #fbfdff
+            }
+
+            .quick-buttons {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 10px
+            }
+
+            /* quick-button now styled above with .quick-replies button, .btn, .send-button, .quick-button */
+
+            /* Right column: Help and API */
+            .side-column {
+                padding: 20px;
+                background: linear-gradient(180deg, #fbfdff, #f6f9ff)
+            }
+
+            .card {
+                background: white;
+                border-radius: 12px;
+                padding: 18px;
+                box-shadow: 0 6px 18px rgba(15, 23, 42, 0.04);
+                margin-bottom: 16px;
+                border: 1px solid rgba(37, 99, 235, 0.06);
+                transition: all 0.3s ease
+            }
+
+            .card:hover {
+                box-shadow: 0 12px 32px rgba(15, 23, 42, 0.08);
+                border-color: rgba(37, 99, 235, 0.12)
+            }
+
+            .card h3 {
+                margin: 0 0 12px 0;
+                font-size: 16px;
+                font-weight: 700;
+                color: var(--brand)
+            }
+
+            .code-block {
+                background: #fff7cc;
+                color: #2b2b0b;
+                padding: 12px;
+                border-radius: 8px;
+                font-family: monospace;
+                font-size: 13px;
+                overflow: auto
+            }
+
+            .api-section {
+                border-left: 4px solid var(--accent);
+                padding: 10px
+            }
+
+            /* Manager page utilities */
+            .request-card {
+                padding: 26px
+            }
+
+            .employee-info {
+                background: #fbfdff;
+                padding: 18px;
+                border-radius: 8px;
+                margin-bottom: 16px;
+                border: 1px solid #eef4f5
+            }
+
+            .info-row {
+                display: flex;
+                justify-content: space-between;
+                padding: 8px 0;
+                border-bottom: 1px solid #f1f5f9
+            }
+
+            .info-label {
+                font-weight: 600;
+                color: #07203a
+            }
+
+            .info-value {
+                color: #334e68
+            }
+
+            .btn {
+                padding: 14px 20px;
+                border-radius: 10px;
+                border: none;
+                cursor: pointer;
+                font-weight: 700;
+                transition: all 0.2s ease;
+                font-size: 15px
+            }
+
+            .btn-approve {
+                background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+                color: white;
+                box-shadow: 0 6px 18px rgba(16, 185, 129, 0.16)
+            }
+
+            .btn-approve:hover {
+                transform: translateY(-2px);
+                box-shadow: 0 10px 28px rgba(16, 185, 129, 0.2)
+            }
+
+            .btn-reject {
+                background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+                color: white;
+                box-shadow: 0 6px 18px rgba(239, 68, 68, 0.16)
+            }
+
+            .btn-reject:hover {
+                transform: translateY(-2px);
+                box-shadow: 0 10px 28px rgba(239, 68, 68, 0.2)
+            }
+
+            .reason-box {
+                background: #f8fafc;
+                padding: 14px;
+                border-left: 4px solid #60a5fa;
+                border-radius: 6px
+            }
+
+            .status-badge {
+                display: inline-block;
+                padding: 6px 12px;
+                border-radius: 999px;
+                font-weight: 700;
+                text-transform: uppercase;
+                font-size: 12px
+            }
+
+            .comment-box {
+                width: 100%;
+                min-height: 84px;
+                padding: 12px;
+                border: 1px solid #e6edf3;
+                border-radius: 8px
+            }
+
+            /* minor utilities */
+            .small {
+                font-size: 13px;
+                color: var(--muted)
+            }
+
+            .center {
+                display: flex;
+                align-items: center;
+                justify-content: center
+            }
+
+            /* Accessibility */
+            :focus {
+                outline: 2px solid rgba(37, 99, 235, 0.18);
+                outline-offset: 2px
+            }
+
+            /* Compact bot message spacing & Milder overrides */
+            .bot-message ul {
+                margin: 8px 0 8px 22px;
+                padding: 0;
+            }
+
+            .bot-message li {
+                margin: 2px 0;
+                line-height: 1.4;
+            }
+
+            .bot-message p {
+                margin: 6px 0;
+                line-height: 1.5;
+            }
+
+            .edit-form-modal {
+                background: white;
+                border: 1px solid #eef2f6;
+                border-radius: var(--radius-md);
+                padding: 16px;
+                max-width: 85%;
+                width: auto;
+                min-width: 280px;
+                box-sizing: border-box;
+                display: flex;
+                flex-direction: column;
+                gap: 10px;
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+                margin-top: 8px;
+                border-bottom-left-radius: 4px;
+            }
+
+            .edit-form-modal h4 {
+                margin: 0 0 4px 0;
+                font-size: 16px;
+                color: var(--brand);
+            }
+
+            .edit-form-modal label {
+                font-size: 13px;
+                font-weight: 600;
+                color: var(--muted);
+                margin-bottom: -4px;
+            }
+
+            .edit-form-modal select,
+            .edit-form-modal input,
+            .edit-form-modal textarea {
+                padding: 10px 12px;
+                border-radius: 8px;
+                border: 1px solid #e2e8f0;
+                font-size: 14px;
+                background: #f8fafc;
+                width: 100%;
+                box-sizing: border-box;
+                font-family: inherit;
+            }
+
+            .edit-form-modal .form-actions {
+                display: flex;
+                gap: 8px;
+                margin-top: 6px;
+            }
+
+            .edit-form-modal button {
+                padding: 8px 16px;
+                border-radius: 6px;
+                border: none;
+                font-weight: 600;
+                cursor: pointer;
+                font-size: 14px;
+            }
+
+            .btn-save {
+                background: var(--accent);
+                color: white;
+            }
+
+            .btn-cancel {
+                background: #f1f5f9;
+                color: var(--brand);
+            }
+
+            .policy-type-modal {
+                position: fixed;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                background: white;
+                padding: 24px;
+                border-radius: 12px;
+                box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+                z-index: 10000;
+                display: none;
+                flex-direction: column;
+                gap: 16px;
+                width: 300px;
+            }
+
+            .policy-type-modal h3 {
+                margin: 0;
+                font-size: 18px;
+                color: var(--brand);
+            }
+
+            .policy-type-modal select {
+                padding: 10px;
+                border-radius: 8px;
+                border: 1px solid #e2e8f0;
+            }
+
+            .modal-overlay {
+                position: fixed;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                background: rgba(0, 0, 0, 0.4);
+                z-index: 9999;
+                display: none;
+            }
+            /* ]]> */
+        </style>
+        </style>
+    </head>
+
+    <body>
+
+        <div class="modal-overlay" id="modalOverlay"></div>
+        <div class="policy-type-modal" id="policyTypeModal">
+            <h3>Select Policy Type</h3>
+            <p style="font-size: 13px; color: var(--muted); margin: -8px 0 0 0;">What kind of policy are you uploading?</p>
+            <select id="policyTypeSelect">
+                <option value="leave">Leave Policy</option>
+                <option value="holiday">Holiday List</option>
+                <option value="wfh">WFH Policy</option>
+                <option value="reimbursement">Reimbursement Policy</option>
+            </select>
+            <div style="display: flex; gap: 10px; margin-top: 8px;">
+                <button onclick="confirmPolicyUpload()" class="btn-save"
+                    style="flex: 1; padding: 10px; border-radius: 8px; border: none; cursor: pointer;">Upload</button>
+                <button onclick="closePolicyModal()" class="btn-cancel"
+                    style="flex: 1; padding: 10px; border-radius: 8px; border: none; cursor: pointer;">Cancel</button>
+            </div>
+        </div>
+
+        <!-- Bot Launcher Button -->
+        <div class="bot-launcher" id="botLauncher" onclick="toggleBot()">
+            💬
+        </div>
+
+        <!-- Main Bot Container (Floating) -->
+        <div class="container" id="botContainer">
+            <div class="header">
+                <div style="display:flex; justify-content:space-between; align-items:center; width:100%;">
+                    <div style="display:flex; align-items:center; gap:12px;">
+                        <!-- PLACEHOLDER AVATAR -->
+                        <div style="width:40px; height:40px; border-radius:50%; background:white; padding:2px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); display:flex; align-items:center; justify-content:center; font-size:20px;">
+                            🤖
+                        </div>
+                        <div>
+                            <h1 style="margin:0; font-size:1.4em;">HR Assistant</h1>
+                            <p style="margin:0; font-size:0.85em; opacity:0.9;">Always active for you</p>
+                        </div>
+                    </div>
+                    <button onclick="toggleBot()"
+                        style="background:none; border:none; color:var(--muted); cursor:pointer; font-size:1.2em;">✕</button>
+                </div>
+            </div>
+
+            <div class="chat-container" id="chatContainer">
+                <div class="message bot-message">
+                    <p>Hello! How can I help you today?</p>
+                </div>
+            </div>
+
+            <div class="loading" id="loadingDiv"
+                style="display:none; text-align:center; padding:10px; font-size:0.9em; color:var(--muted); background: var(--bg-1);">
+                🤔 Thinking...
+            </div>
+
+            <div class="input-container">
+                <button id="ttsButton" class="tts-button" title="Toggle Voice" onclick="toggleTTS()">🔊</button>
+                <input type="file" id="policyUploadInput" style="display:none" onchange="handlePolicyFileUpload(event)" />
+                <label for="policyUploadInput" class="mic-button" title="Upload & Update Policy"
+                    style="cursor:pointer; font-size: 18px;">📎</label>
+                <input type="text" id="messageInput" class="message-input" placeholder="Ask about leave, WFH..."
+                    onkeypress="handleKeyPress(event)" autocomplete="off" />
+                <button id="micButton" class="mic-button" title="Speak" onclick="toggleSpeechRecognition()">🎤</button>
+                <button class="send-button" onclick="sendMessage()"></button>
+            </div>
+        </div>
+
+        <script>
+            /* <![CDATA[ */
+            // --- Configuration & State ---
+            const API_BASE_URL = 'https://hr-agent-bot.onrender.com'; // Absolute URL for CORS
+            let editFormContainer = null;
+            let ttsEnabled = false;
+            const quickActions = [
+                { label: 'Apply Leave', text: 'I want to apply for leave' },
+                { label: 'Apply WFH', text: 'I want to apply for WFH' },
+                { label: 'My Requests', text: 'Show my requests' },
+                { label: 'Holidays', text: 'Show holiday list' }
+            ];
+
+            function toggleBot() {
+                const container = document.getElementById('botContainer');
+                container.classList.toggle('open');
+                if (container.classList.contains('open')) {
+                    document.getElementById('messageInput').focus();
+                }
+            }
+
+            function toggleTTS() {
+                ttsEnabled = !ttsEnabled;
+                const btn = document.getElementById('ttsButton');
+                btn.innerText = ttsEnabled ? '🔈' : '🔊';
+                btn.style.color = ttsEnabled ? 'var(--accent)' : 'var(--brand)';
+                if (!ttsEnabled) window.speechSynthesis.cancel();
+            }
+
+            // --- Chat Functions ---
+            function handleKeyPress(e) { if (e.key === 'Enter') sendMessage(); }
+
+            async function sendMessage() {
+                const input = document.getElementById('messageInput');
+                const msg = input.value.trim();
+                if (!msg) return;
+
+                addMessage(msg, true);
+                input.value = '';
+                await sendChatRequest({ message: msg });
+            }
+
+            function addMessage(msg, isUser = false) {
+                const chat = document.getElementById('chatContainer');
+                const div = document.createElement('div');
+                div.className = `message ${isUser ? 'user-message' : 'bot-message'}`;
+
+                const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                const messageBody = document.createElement('div');
+                messageBody.className = 'message-body';
+
+                if (isUser) {
+                    messageBody.innerText = msg;
+                } else {
+                    messageBody.innerHTML = parseBotMessageMarkdown(msg);
+                    if (ttsEnabled) speak(msg);
+                }
+
+                const timeSpan = document.createElement('span');
+                timeSpan.className = 'message-time';
+                timeSpan.innerText = time;
+
+                div.appendChild(messageBody);
+                div.appendChild(timeSpan);
+                chat.appendChild(div);
+                chat.scrollTop = chat.scrollHeight;
+            }
+
+            async function sendChatRequest(payload) {
+                const loading = document.getElementById('loadingDiv');
+                loading.style.display = 'block';
+
+                try {
+                    // Get Salesforce User Context (Visualforce Global Variables)
+                    // We try to get them safely.
+                    let ssoName = '';
+                    let ssoEmail = '';
+                    
+                    try {
+                        ssoName = '{!$User.FirstName} {!$User.LastName}';
+                        ssoEmail = '{!$User.Email}';
+                    } catch (e) {
+                         console.log('Not in Salesforce context or error accessing user vars');
+                    }
+
+                    const response = await fetch(`${API_BASE_URL}/api/chat`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-Session-Id': getSessionId(),
+                            'x-user-name': ssoName,
+                            'x-user-email': ssoEmail
+                        },
+                        body: JSON.stringify(payload)
+                    });
+                    const data = await response.json();
+                    window.lastResponseData = data; // Store for edit form
+                    if (data.reply) addMessage(data.reply);
+
+                    // Show Quick Actions if it's a greeting or general start
+                    const greetingTriggers = ['how can i help', 'hello', 'hi', 'what can i do'];
+                    if (data.reply && greetingTriggers.some(t => data.reply.toLowerCase().includes(t))) {
+                        showQuickActions();
+                    }
+
+                    if (data.showButtons) addConfirmationButtons(data.intent);
+                    if (data.intent && ['leave_created', 'wfh_created', 'confirmation_no'].includes(data.intent)) {
+                        removeConfirmationButtons();
+                        removeEditForm();
+                        setTimeout(showQuickActions, 500); // Show quick actions after success
+                    }
+
+                } catch (err) {
+                    console.error(err);
+                    addMessage('❌ Sorry, something went wrong. Please ensure "https://hr-agent-bot.onrender.com" is added to CSP Trusted Sites.');
+                } finally {
+                    loading.style.display = 'none';
+                }
+            }
+
+            // --- UI Extensions ---
+            function showQuickActions() {
+                const chat = document.getElementById('chatContainer');
+                const div = document.createElement('div');
+                div.className = 'quick-actions-container';
+                quickActions.forEach(action => {
+                    const pill = document.createElement('button');
+                    pill.className = 'quick-action-pill';
+                    pill.innerText = action.label;
+                    pill.onclick = () => {
+                        addMessage(action.text, true);
+                        sendChatRequest({ message: action.text });
+                        div.remove();
+                    };
+                    div.appendChild(pill);
+                });
+                chat.appendChild(div);
+                chat.scrollTop = chat.scrollHeight;
+            }
+
+            function addConfirmationButtons(intent) {
+                removeConfirmationButtons();
+                const chat = document.getElementById('chatContainer');
+                const div = document.createElement('div');
+                div.className = 'confirmation-buttons';
+                div.dataset.intent = intent; // Store intent for edit form logic
+                div.style.marginTop = '10px';
+                div.innerHTML = `
+                    <button onclick="sendChatRequest({message:'yes'})" style="background:#22c55e;color:white;border:none;padding:6px 14px;border-radius:8px;cursor:pointer;font-weight:600;margin-right:8px;font-size:13px;">✅ Yes</button>
+                    <button onclick="sendChatRequest({message:'no'})" style="background:#ef4444;color:white;border:none;padding:6px 14px;border-radius:8px;cursor:pointer;font-weight:600;margin-right:8px;font-size:13px;">❌ No</button>
+                    <button onclick="showEditForm()" style="background:#f59e42;color:white;border:none;padding:6px 14px;border-radius:8px;cursor:pointer;font-weight:600;font-size:13px;">✏️ Edit</button>
+                `;
+                chat.appendChild(div);
+                chat.scrollTop = chat.scrollHeight;
+            }
+
+            function removeConfirmationButtons() {
+                document.querySelectorAll('.confirmation-buttons').forEach(el => el.remove());
+            }
+
+            function showEditForm() {
+                if (editFormContainer) return;
+
+                const chat = document.getElementById('chatContainer');
+                // Check stored intent on the confirmation container
+                const activeConfirmation = document.querySelector('.confirmation-buttons');
+                const isWFH = activeConfirmation && activeConfirmation.dataset.intent === 'confirm_wfh';
+
+                // Find current data if available
+                const lastData = window.lastResponseData?.pendingRequest?.details || {};
+
+                editFormContainer = document.createElement('div');
+                editFormContainer.className = 'edit-form-modal';
+
+                let typeField = '';
+                if (!isWFH) {
+                    typeField = `
+                        <label>Leave Type</label>
+                        <select id="editLeaveType">
+                            <option value="ANNUAL" ${lastData.leaveType === 'ANNUAL' ? 'selected' : ''}>Annual</option>
+                            <option value="SICK" ${lastData.leaveType === 'SICK' ? 'selected' : ''}>Sick</option>
+                            <option value="CASUAL" ${lastData.leaveType === 'CASUAL' ? 'selected' : ''}>Casual</option>
+                        </select>
+                    `;
+                }
+
+                editFormContainer.innerHTML = `
+                    <h4>Update ${isWFH ? 'WFH' : 'Leave'} Request</h4>
+                    ${typeField}
+                    <div class="date-row" style="display:flex;gap:10px;">
+                        <div style="flex:1">
+                            <label>Start Date</label>
+                            <input type="date" id="editStartDate" value="${lastData.startDate || lastData.date || ''}" style="width:100%">
+                        </div>
+                        <div style="flex:1">
+                            <label>End Date</label>
+                            <input type="date" id="editEndDate" value="${lastData.endDate || lastData.startDate || lastData.date || ''}" style="width:100%">
+                        </div>
+                    </div>
+                    <label>Reason</label>
+                    <textarea id="editReason" rows="2">${lastData.reason || ''}</textarea>
+                    <div class="form-actions">
+                        <button class="btn-save" onclick="submitEdit(${isWFH})">Save changes</button>
+                        <button class="btn-cancel" onclick="removeEditForm()">Cancel</button>
+                    </div>
+                `;
+                chat.appendChild(editFormContainer);
+                chat.scrollTop = chat.scrollHeight;
+            }
+
+            function removeEditForm() {
+                if (editFormContainer) {
+                    editFormContainer.remove();
+                    editFormContainer = null;
+                }
+            }
+
+            function submitEdit(isWFH) {
+                const details = {
+                    startDate: document.getElementById('editStartDate').value,
+                    endDate: document.getElementById('editEndDate').value,
+                    reason: document.getElementById('editReason').value
+                };
+                if (!isWFH) {
+                    details.leaveType = document.getElementById('editLeaveType').value;
+                } else {
+                    details.date = details.startDate; // Keep for backward compatibility
+                }
+                sendChatRequest({ message: 'edit', editDetails: details });
+                removeEditForm();
+            }
+
+            // --- Helpers ---
+            function getSessionId() {
+                let id = localStorage.getItem('hr_bot_session_id');
+                if (!id) { id = Math.random().toString(36).substring(7); localStorage.setItem('hr_bot_session_id', id); }
+                return id;
+            }
+
+            function parseBotMessageMarkdown(text) {
+                if(!text) return '';
+                let html = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                html = html.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
+                html = html.replace(/(^|\n)[\-*] (.*?)(?=\n|$)/g, '$1<ul><li>$2</li></ul>');
+                html = html.replace(/\n\n/g, '<br><br>');
+                html = html.replace(/\n/g, '<br>');
+                return html;
+            }
+
+            function speak(text) {
+                window.speechSynthesis.cancel();
+                const u = new SpeechSynthesisUtterance(text.replace(/[*#]/g, ''));
+                u.lang = 'en-IN';
+                window.speechSynthesis.speak(u);
+            }
+
+            // --- STT ---
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            let recognition = SpeechRecognition ? new SpeechRecognition() : null;
+            if (recognition) {
+                recognition.continuous = false;
+                recognition.onresult = (e) => {
+                    document.getElementById('messageInput').value = e.results[0][0].transcript;
+                    sendMessage();
+                };
+                recognition.onstart = () => { document.getElementById('micButton').style.color = '#ef4444'; };
+                recognition.onend = () => { document.getElementById('micButton').style.color = 'var(--brand)'; };
+            }
+            function toggleSpeechRecognition() { if (recognition) recognition.start(); }
+
+            // --- Policy Upload Functions ---
+            let selectedPolicyFile = null;
+
+            function handlePolicyFileUpload(event) {
+                const file = event.target.files[0];
+                if (!file) return;
+
+                selectedPolicyFile = file;
+                document.getElementById('modalOverlay').style.display = 'block';
+                document.getElementById('policyTypeModal').style.display = 'flex';
+            }
+
+            function closePolicyModal() {
+                document.getElementById('modalOverlay').style.display = 'none';
+                document.getElementById('policyTypeModal').style.display = 'none';
+                document.getElementById('policyUploadInput').value = '';
+                selectedPolicyFile = null;
+            }
+
+            async function confirmPolicyUpload() {
+                if (!selectedPolicyFile) return;
+
+                const policyType = document.getElementById('policyTypeSelect').value;
+                const formData = new FormData();
+                formData.append('policyFile', selectedPolicyFile);
+                formData.append('policyType', policyType);
+
+                closePolicyModal();
+
+                const loading = document.getElementById('loadingDiv');
+                loading.innerText = '⏳ Updating policy...';
+                loading.style.display = 'block';
+
+                try {
+                     let ssoName = '';
+                    let ssoEmail = '';
+                    try {
+                        ssoName = '{!$User.FirstName} {!$User.LastName}';
+                        ssoEmail = '{!$User.Email}';
+                    } catch (e) {
+                         console.log('Not in Salesforce context or error accessing user vars');
+                    }
+                    
+                    const response = await fetch(`${API_BASE_URL}/api/upload-policy`, {
+                        method: 'POST',
+                        headers: {
+                            'x-user-email': ssoEmail,
+                            'x-user-name': ssoName
+                        },
+                        body: formData
+                    });
+
+                    const data = await response.json();
+                    if (data.reply) {
+                        addMessage(data.reply);
+                    } else if (response.status === 403) {
+                        addMessage('⚠️ You are not authorized to update policies. Only Jashwanth M is authorized.');
+                    } else {
+                        addMessage('❌ Failed to update policy. Please try again.');
+                    }
+                } catch (err) {
+                    console.error(err);
+                    addMessage('❌ Error uploading document.');
+                } finally {
+                    loading.innerText = '🤔 Thinking...';
+                    loading.style.display = 'none';
+                }
+            }
+            /* ]]> */
+        </script>
+    </body>
+
+    </html>
+</apex:page>

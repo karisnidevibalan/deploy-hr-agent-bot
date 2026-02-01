@@ -85,7 +85,7 @@ export class SalesforceService {
         try {
             const result = await this.conn.query(`
                     SELECT Id, Start_Date__c, End_Date__c, Status__c, Reason__c, CreatedDate
-                    FROM WFH_Request__c
+                    FROM WFH__c
                     WHERE Employee__c IN (
                         SELECT Id FROM User WHERE Email = '${employeeEmail.toLowerCase()}'
                     )
@@ -416,7 +416,7 @@ export class SalesforceService {
                 recordData.Employee__c = employeeId;
             }
 
-            const result = await this.conn.sobject('WFH_Request__c').create(recordData);
+            const result = await this.conn.sobject('WFH__c').create(recordData);
 
             console.log('✅ Real Salesforce WFH Record Created:', result.id);
             console.log('📋 Manager approval flow should be triggered from WFH__c automations');
@@ -495,7 +495,7 @@ export class SalesforceService {
 
             console.log(`🔍 Querying Salesforce for record: ${recordId}`);
 
-            const candidateObjects = ['Leave_Request__c', 'WFH_Request__c']; // Changed WFH__c to WFH_Request__c
+            const candidateObjects = ['Leave_Request__c', 'WFH__c']; // Changed WFH__c to WFH_Request__c -> Reverted to WFH__c
 
             for (const objectName of candidateObjects) {
                 try {
@@ -652,9 +652,9 @@ export class SalesforceService {
                     Status__c: status
                 });
             } catch (leaveError: any) {
-                // If it's not a Leave_Request__c, try WFH_Request__c
+                // If it's not a Leave_Request__c, try WFH__c
                 if (this.isMissingRecordError(leaveError)) {
-                    await this.conn.sobject('WFH_Request__c').update({
+                    await this.conn.sobject('WFH__c').update({
                         Id: recordId,
                         Status__c: status
                     });

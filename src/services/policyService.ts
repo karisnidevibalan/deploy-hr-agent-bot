@@ -185,9 +185,15 @@ export class PolicyService {
             // Remove duplicates (unique by date and name)
             const uniqueHolidays = Array.from(new Map(allHolidays.map(h => [`${h.date}-${h.name}`, h])).values());
 
+            const currentYear = new Date().getFullYear();
+            const currentYearHolidays = uniqueHolidays.filter(h => {
+                const hDate = new Date(h.date);
+                return !isNaN(hDate.getTime()) && hDate.getFullYear() === currentYear;
+            });
+
             return {
-                year: latestYear || new Date().getFullYear(),
-                holidays: uniqueHolidays.sort((a, b) => a.date.localeCompare(b.date))
+                year: currentYear,
+                holidays: currentYearHolidays.sort((a, b) => a.date.localeCompare(b.date))
             };
         } catch (error) {
             console.error('Error getting all holidays:', error);
