@@ -126,7 +126,7 @@ import { PolicyService } from '../services/policyService';
 const salesforceService = new SalesforceService();
 const aiService = new AiService();
 const DEFAULT_EMPLOYEE_NAME = 'Current User';
-const DEFAULT_EMPLOYEE_EMAIL = 'karisnid.23cse@kongu.edu';
+const DEFAULT_EMPLOYEE_EMAIL = 'karisnidevibalan7@gmail.com';
 
 // Helper to extract leave type using entityExtractor
 function extractLeaveType(message: string): string | null {

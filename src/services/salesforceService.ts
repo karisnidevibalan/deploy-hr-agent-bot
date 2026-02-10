@@ -241,7 +241,7 @@ export class SalesforceService {
                 Reason__c: leaveData.isException ? `[EXCEPTION] ${leaveData.reason || ''}`.trim() : leaveData.reason,
                 Status__c: 'Pending',
                 Request_Source__c: 'Chatbot',
-                Manager__c: managerId,
+                Manager__c: '0058Z000008saegQAA', // Hardcoded Winfomi Developer for testing
                 Is_Exception__c: leaveData.isException || false,
                 Send_Email_Notification__c: true // Always trigger the Salesforce Flow
                 // Total_Days__c is a formula field that auto-calculates from dates
@@ -413,7 +413,6 @@ export class SalesforceService {
                 Status__c: 'Pending Approval',
                 Manager_approval__c: false,
                 Is_Exception__c: wfhData.isException || false,
-                Manager__c: managerId,
                 Send_Email_Notification__c: true // Always trigger the Salesforce Flow
             };
 
