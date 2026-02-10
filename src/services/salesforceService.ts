@@ -227,16 +227,21 @@ export class SalesforceService {
                 if (Number.isNaN(parsed.getTime())) return d;
                 return parsed.toISOString().split('T')[0];
             };
+            const employeeId = leaveData.employeeId || (leaveData.employeeEmail ? await this.lookupUserIdByEmail(leaveData.employeeEmail) : null);
+
             const recordData: any = {
-                Employee__c: leaveData.employeeId || null,
+                Employee__c: employeeId,
                 Employee_Email__c: leaveData.employeeEmail || null,
                 Employee_Name__c: leaveData.employeeName,
                 Leave_Type__c: sfLeaveType,
                 Start_Date__c: normalizeDate(leaveData.startDate),
                 End_Date__c: normalizeDate(leaveData.endDate),
-                Reason__c: leaveData.reason,
+                Reason__c: leaveData.isException ? `[EXCEPTION] ${leaveData.reason || ''}`.trim() : leaveData.reason,
                 Status__c: 'Pending',
-                Request_Source__c: 'Chatbot'
+                Request_Source__c: 'Chatbot',
+                Is_Exception__c: leaveData.isException || false,
+                Send_Email_Notification__c: true // Always trigger the Salesforce Flow
+                // Total_Days__c is a formula field that auto-calculates from dates
             };
 
             console.log('📤 Sending to Salesforce:', JSON.stringify(recordData, null, 2));
@@ -275,7 +280,7 @@ export class SalesforceService {
             Leave_Type__c: leaveData.leaveType,
             Start_Date__c: leaveData.startDate,
             End_Date__c: leaveData.endDate,
-            Reason__c: leaveData.reason,
+            Reason__c: leaveData.isException ? `[EXCEPTION] ${leaveData.reason || ''}`.trim() : leaveData.reason,
             Status__c: 'Pending Approval',
             Created_Date__c: new Date().toISOString(),
             Manager_Approval__c: false
@@ -401,11 +406,13 @@ export class SalesforceService {
                 Name: this.buildWfhRecordName(wfhData.employeeName, normalizedDate),
                 Date__c: normalizedDate,
                 Status__c: 'Pending Approval',
-                Manager_approval__c: false
+                Manager_approval__c: false,
+                Is_Exception__c: wfhData.isException || false,
+                Send_Email_Notification__c: true // Always trigger the Salesforce Flow
             };
 
-            if (wfhData.reason) {
-                recordData.Reason__c = wfhData.reason;
+            if (wfhData.reason || wfhData.isException) {
+                recordData.Reason__c = wfhData.isException ? `[EXCEPTION] ${wfhData.reason || ''}`.trim() : wfhData.reason;
             }
 
             if (wfhData.employeeEmail) {
@@ -448,8 +455,8 @@ export class SalesforceService {
             Employee_Name__c: wfhData.employeeName,
             email__c: wfhData.employeeEmail || null,
             Employee__c: wfhData.employeeId || null,
-            Date__c: normalizedDate,
-            Reason__c: wfhData.reason,
+            Date__c: wfhData.date,
+            Reason__c: wfhData.isException ? `[EXCEPTION] ${wfhData.reason || ''}`.trim() : wfhData.reason,
             Status__c: 'Pending Approval',
             Created_Date__c: new Date().toISOString(),
             Manager_approval__c: false
@@ -797,6 +804,115 @@ export class SalesforceService {
             console.error('❌ Salesforce overlap check error:', error);
             // Return no overlap on error to allow request to proceed
             return { hasOverlap: false, overlappingLeaves: [] };
+        }
+    }
+
+    /**
+     * Save or Update a Policy in Salesforce
+     */
+    async savePolicy(type: string, content: any, year?: number): Promise<{ success: boolean; id?: string; message?: string }> {
+        if (this.demoMode) {
+            console.log(`📝 [DEMO] Saving policy ${type} (Year: ${year || 'N/A'})`);
+            return { success: true, message: 'Policy saved in demo mode (simulated)' };
+        }
+
+        try {
+            const authSuccess = await this.authenticate();
+            if (!authSuccess) throw new Error('Authentication failed');
+
+            // 1. Check if policy exists
+            let query = `SELECT Id FROM HR_Policy_c__c WHERE Type_c__c = '${type}' AND Is_Active_c__c = true`;
+            if (year) {
+                query += ` AND Year_c__c = ${year}`;
+            }
+            const result = await this.conn.query(query);
+
+            const recordData: any = {
+                Type_c__c: type,
+                Content__c: JSON.stringify(content),
+                Is_Active_c__c: true
+            };
+            if (year) recordData.Year_c__c = year;
+
+            let saveResult;
+            if (result.records && result.records.length > 0) {
+                // Update existing
+                recordData.Id = result.records[0].Id;
+                saveResult = await this.conn.sobject('HR_Policy_c__c').update(recordData);
+                console.log(`✅ Policy ${type} updated in Salesforce.`);
+            } else {
+                // Create new
+                saveResult = await this.conn.sobject('HR_Policy_c__c').create(recordData);
+                console.log(`✅ Policy ${type} created in Salesforce.`);
+            }
+
+            return { success: true, id: saveResult.id };
+
+        } catch (error: any) {
+            console.error('❌ Error saving policy to Salesforce:', error);
+            return { success: false, message: error.message };
+        }
+    }
+
+    /**
+     * Get a Policy from Salesforce
+     */
+    async getPolicy(type: string, year?: number): Promise<any> {
+        if (this.demoMode) {
+            console.log(`🔍 [DEMO] Fetching policy ${type}`);
+            return null;
+        }
+
+        try {
+            if (!this.isAuthenticated) await this.authenticate();
+
+            let query = `SELECT Content__c FROM HR_Policy_c__c WHERE Type_c__c = '${type}' AND Is_Active_c__c = true`;
+            if (year) {
+                query += ` AND Year_c__c = ${year}`;
+            }
+            query += ' ORDER BY CreatedDate DESC LIMIT 1';
+
+            const result = await this.conn.query(query);
+            if (result.records && result.records.length > 0) {
+                const contentStr = result.records[0].Content__c;
+                return JSON.parse(contentStr);
+            }
+            return null;
+
+        } catch (error) {
+            console.error('❌ Error fetching policy from Salesforce:', error);
+            return null;
+        }
+    }
+
+    /**
+     * Get All Holiday Policies (for multi-year support)
+     */
+    async getAllHolidayPolicies(): Promise<any[]> {
+        if (this.demoMode) {
+            return [];
+        }
+
+        try {
+            if (!this.isAuthenticated) await this.authenticate();
+
+            const query = `SELECT Content__c, Year_c__c FROM HR_Policy_c__c WHERE Type_c__c = 'Holiday' AND Is_Active_c__c = true`;
+            const result = await this.conn.query(query);
+
+            if (result.records && result.records.length > 0) {
+                return result.records.map((r: any) => {
+                    const data = JSON.parse(r.Content__c);
+                    // Ensure year is attached if missing in content
+                    if (!data.year && r.Year_c__c) {
+                        data.year = r.Year_c__c;
+                    }
+                    return data;
+                });
+            }
+            return [];
+        } catch (error) {
+            console.error('❌ Error fetching holiday policies from Salesforce:', error);
+            return [];
         }
     }
 

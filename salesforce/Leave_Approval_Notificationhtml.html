@@ -1,0 +1,51 @@
+<h1 style="font-size: 24px; font-weight: 600; color: #1a1a1a; margin-top: 0; margin-bottom: 24px;">Leave Request Pending
+    Approval</h1>
+
+<p style="font-size: 16px; margin-bottom: 24px;">Hello,</p>
+<p style="font-size: 16px; margin-bottom: 32px;">You have a new leave request pending your approval.</p>
+
+<table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 32px;">
+    <tr>
+        <td style="padding: 12px 0; width: 120px; font-weight: 600; font-size: 16px; vertical-align: top;">Employee:
+        </td>
+        <td style="padding: 12px 0; font-size: 16px;">{!leave_request__c.Employee_Name__c}</td>
+    </tr>
+    <tr>
+        <td style="padding: 12px 0; font-weight: 600; font-size: 16px; vertical-align: top;">Leave Type:</td>
+        <td style="padding: 12px 0; font-size: 16px;">{!leave_request__c.Leave_Type__c}</td>
+    </tr>
+    <tr>
+        <td style="padding: 12px 0; font-weight: 600; font-size: 16px; vertical-align: top;">From:</td>
+        <td style="padding: 12px 0; font-size: 16px;">{!leave_request__c.Start_Date__c}</td>
+    </tr>
+    <tr>
+        <td style="padding: 12px 0; font-weight: 600; font-size: 16px; vertical-align: top;">To:</td>
+        <td style="padding: 12px 0; font-size: 16px;">{!leave_request__c.End_Date__c}</td>
+    </tr>
+    <tr>
+        <td style="padding: 12px 0; font-weight: 600; font-size: 16px; vertical-align: top;">Reason:</td>
+        <td style="padding: 12px 0; font-size: 16px;">{!leave_request__c.Reason__c}</td>
+    </tr>
+</table>
+
+<div style="margin-bottom: 32px;">
+    <a href="https://hr-agent-bot.vercel.app/approve?id={!leave_request__c.Id}&action=approve&token={!leave_request__c.Id}"
+        style="display: inline-block; background-color: #28a745; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 16px; text-align: center;">
+        ✅ APPROVE
+    </a>
+    <a href="https://hr-agent-bot.vercel.app/approve?id={!leave_request__c.Id}&action=reject&token={!leave_request__c.Id}"
+        style="display: inline-block; background-color: #dc3545; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 16px; text-align: center; margin-left: 12px;">
+        ❌ REJECT
+    </a>
+</div>
+
+<p style="font-style: italic; color: #666; font-size: 16px; margin-bottom: 24px;">Click the button above to approve or
+    reject this leave request instantly.</p>
+
+<p style="font-size: 16px; margin-bottom: 32px;">
+    Or view in Salesforce: <a href="https://winfomi.my.salesforce.com/{!leave_request__c.Id}"
+        style="color: #007bff; text-decoration: underline;">{!leave_request__c.Name}</a>
+</p>
+
+<p style="font-size: 16px; margin-bottom: 8px;">Thank you,</p>
+<p style="font-size: 16px; font-weight: 600; margin-bottom: 0;">HR Team</p>
