@@ -410,7 +410,7 @@ export class SalesforceService {
             const recordData: any = {
                 Name: this.buildWfhRecordName(wfhData.employeeName, normalizedDate),
                 Date__c: normalizedDate,
-                Status__c: 'Pending',
+                Status__c: 'Pending Approval',
                 Manager_approval__c: false,
                 Is_Exception__c: wfhData.isException || false,
                 Manager__c: managerId,

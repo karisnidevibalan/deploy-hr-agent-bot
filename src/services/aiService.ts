@@ -162,12 +162,6 @@ Provide exceptional, personalized HR support by understanding employee needs, an
       return 'view_requests';
     }
 
-    // 1b. Status Check
-    if (lowerMessage.includes('my status') || lowerMessage.includes('who am i') ||
-      lowerMessage.includes('check my profile') || lowerMessage.includes('system status')) {
-      return 'status_check';
-    }
-
     // 2. Enhanced greeting detection
     const greetingPatterns = ['hello', 'hi', 'hey', 'good morning', 'good afternoon', 'good evening', 'hii', 'hiii', 'helo', 'greetings'];
     const isShortGreeting = greetingPatterns.some(pattern => {
@@ -373,7 +367,6 @@ System Intents:
 - view_requests: See existing leave/WFH requests
 - general_query: General HR question
 - greeting: Simple greeting or small talk
-- status_check: User wants to see their current linked email/name or system status
 
 Respond in JSON ONLY:
 {
