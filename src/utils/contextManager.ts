@@ -41,6 +41,7 @@ export interface SessionContext {
     intent: string;
   }>;
   gender?: 'Male' | 'Female' | 'Unknown';
+  awaitingExceptionApproval?: boolean;
 }
 
 class ContextManager {

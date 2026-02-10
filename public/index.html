@@ -130,6 +130,16 @@
             z-index: 9999;
             display: none;
         }
+
+        .duration-display {
+            background: #f1f5f9;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--brand);
+            display: inline-block;
+        }
     </style>
 </head>
 
@@ -293,6 +303,10 @@
                     showQuickActions();
                 }
 
+                if (data.showForm) {
+                    showRequestForm(data.details, data.intent === 'apply_wfh', data.isEdit === false ? false : true);
+                }
+
                 if (data.showButtons) addConfirmationButtons(data.intent);
                 if (data.intent && ['leave_created', 'wfh_created', 'confirmation_no'].includes(data.intent)) {
                     removeConfirmationButtons();
@@ -348,19 +362,30 @@
             document.querySelectorAll('.confirmation-buttons').forEach(el => el.remove());
         }
 
-        function showEditForm() {
-            if (editFormContainer) return;
+        function removeEditForm() {
+            if (editFormContainer) {
+                editFormContainer.remove();
+                editFormContainer = null;
+            }
+        }
+
+
+        function showRequestForm(prefillData = {}, isWFH = false, isEdit = true) {
+            if (editFormContainer) removeEditForm();
 
             const chat = document.getElementById('chatContainer');
-            // Check stored intent on the confirmation container
-            const activeConfirmation = document.querySelector('.confirmation-buttons');
-            const isWFH = activeConfirmation && activeConfirmation.dataset.intent === 'confirm_wfh';
+            // If isWFH wasn't passed, try to detect from active confirmation
+            if (isWFH === null || isWFH === undefined) {
+                const activeConfirmation = document.querySelector('.confirmation-buttons');
+                isWFH = activeConfirmation && activeConfirmation.dataset.intent === 'confirm_wfh';
+            }
 
-            // Find current data if available
-            const lastData = window.lastResponseData?.pendingRequest?.details || {};
+            // Merge prefillData with lastResponseData if needed
+            const lastData = isEdit ? (window.lastResponseData?.pendingRequest?.details || prefillData) : prefillData;
 
             editFormContainer = document.createElement('div');
             editFormContainer.className = 'edit-form-modal';
+            editFormContainer.dataset.isEdit = isEdit;
 
             let typeField = '';
             if (!isWFH) {
@@ -374,50 +399,146 @@
                 `;
             }
 
+            const startDate = lastData.startDate || lastData.date || '';
+            const endDate = lastData.endDate || lastData.date || startDate || '';
+
             editFormContainer.innerHTML = `
-                <h4>Update ${isWFH ? 'WFH' : 'Leave'} Request</h4>
+                <h4>${isEdit ? 'Update' : 'Apply'} ${isWFH ? 'WFH' : 'Leave'}</h4>
                 ${typeField}
                 <div class="date-row" style="display:flex;gap:10px;">
                     <div style="flex:1">
                         <label>Start Date</label>
-                        <input type="date" id="editStartDate" value="${lastData.startDate || lastData.date || ''}" style="width:100%">
+                        <input type="date" id="editStartDate" value="${startDate}" style="width:100%" onchange="updateDuration()">
                     </div>
                     <div style="flex:1">
                         <label>End Date</label>
-                        <input type="date" id="editEndDate" value="${lastData.endDate || lastData.startDate || lastData.date || ''}" style="width:100%">
+                        <input type="date" id="editEndDate" value="${endDate}" style="width:100%" onchange="updateDuration()">
                     </div>
+                </div>
+                <div id="durationWrapper" style="margin-top:4px;">
+                    <label>No. of Days (Working Days)</label>
+                    <input type="number" id="durationInput" min="0.5" step="0.5" value="1" style="width:100%; padding:10px 12px; border-radius:8px; border:1px solid #e2e8f0; font-size:14px; background:#f8fafc;">
                 </div>
                 <label>Reason</label>
                 <textarea id="editReason" rows="2">${lastData.reason || ''}</textarea>
-                <div class="form-actions">
+                <div class="form-actions" id="formActions">
                     <button class="btn-save" onclick="submitEdit(${isWFH})">Save changes</button>
                     <button class="btn-cancel" onclick="removeEditForm()">Cancel</button>
                 </div>
             `;
             chat.appendChild(editFormContainer);
+            updateDuration(); // Auto-calculate initial value
             chat.scrollTop = chat.scrollHeight;
         }
 
-        function removeEditForm() {
-            if (editFormContainer) {
-                editFormContainer.remove();
-                editFormContainer = null;
+        // Aliasing to keep old references working
+        function showEditForm() { showRequestForm(); }
+
+        function updateDuration() {
+            const startStr = document.getElementById('editStartDate').value;
+            const endStr = document.getElementById('editEndDate').value;
+            if (!startStr) return;
+
+            const days = calculateWorkingDays(startStr, endStr || startStr);
+            document.getElementById('durationInput').value = days;
+        }
+
+        function calculateWorkingDays(startStr, endStr) {
+            let start = new Date(startStr);
+            let end = new Date(endStr);
+            if (end < start) return 0;
+
+            let count = 0;
+            let cur = new Date(start);
+            while (cur <= end) {
+                let day = cur.getDay();
+                if (day !== 0 && day !== 6) count++; // Not Sat or Sun
+                cur.setDate(cur.getDate() + 1);
             }
+            return count;
         }
 
         function submitEdit(isWFH) {
+            const start = document.getElementById('editStartDate').value;
+            const end = document.getElementById('editEndDate').value || start;
+            const reason = document.getElementById('editReason').value;
+            const type = isWFH ? 'WFH' : document.getElementById('editLeaveType').value;
+            const days = document.getElementById('durationInput').value;
+
+            if (!start) { alert('Please select a start date'); return; }
+
+            // Validate that days is a positive number
+            if (!days || parseFloat(days) <= 0) {
+                alert('Please enter a valid number of days');
+                return;
+            }
+
+            // Validate dates
+            const startDate = new Date(start);
+            const endDate = new Date(end);
+            if (endDate < startDate) {
+                alert('End date must be on or after start date');
+                return;
+            }
+
+            // Store details for confirmation
+            window.pendingLeaveDetails = {
+                startDate: start,
+                endDate: end,
+                reason: reason,
+                leaveType: isWFH ? null : type,
+                durationDays: parseFloat(days),
+                isWFH: isWFH
+            };
+
+            // Send confirmation as chat message
+            const confirmMsg = `Confirm details: ${days} day(s) ${type} from ${start} to ${end}.`;
+            addMessage(confirmMsg, false);
+
+            // Show confirmation buttons
+            const chat = document.getElementById('chatContainer');
+            const div = document.createElement('div');
+            div.className = 'confirmation-buttons';
+            div.innerHTML = `
+                <button onclick="confirmLeaveSubmit()" style="background:#22c55e;color:white;border:none;padding:6px 14px;border-radius:8px;cursor:pointer;font-weight:600;margin-right:8px;font-size:13px;">✅ Confirm</button>
+                <button onclick="showRequestForm(window.pendingLeaveDetails, ${isWFH})" style="background:#f59e42;color:white;border:none;padding:6px 14px;border-radius:8px;cursor:pointer;font-weight:600;font-size:13px;">✏️ Edit</button>
+            `;
+            chat.appendChild(div);
+            chat.scrollTop = chat.scrollHeight;
+
+            // Remove the form
+            removeEditForm();
+        }
+
+        function getFormDetails(isWFH) {
             const details = {
                 startDate: document.getElementById('editStartDate').value,
                 endDate: document.getElementById('editEndDate').value,
                 reason: document.getElementById('editReason').value
             };
-            if (!isWFH) {
-                details.leaveType = document.getElementById('editLeaveType').value;
+            if (!isWFH) details.leaveType = document.getElementById('editLeaveType').value;
+            return details;
+        }
+
+        function confirmLeaveSubmit() {
+            if (!window.pendingLeaveDetails) return;
+
+            const details = {
+                startDate: window.pendingLeaveDetails.startDate,
+                endDate: window.pendingLeaveDetails.endDate,
+                reason: window.pendingLeaveDetails.reason,
+                durationDays: window.pendingLeaveDetails.durationDays
+            };
+
+            if (!window.pendingLeaveDetails.isWFH) {
+                details.leaveType = window.pendingLeaveDetails.leaveType;
             } else {
-                details.date = details.startDate; // Keep for backward compatibility
+                details.date = window.pendingLeaveDetails.startDate;
             }
+
             sendChatRequest({ message: 'edit', editDetails: details });
-            removeEditForm();
+            removeConfirmationButtons();
+            window.pendingLeaveDetails = null;
         }
 
         // --- Helpers ---

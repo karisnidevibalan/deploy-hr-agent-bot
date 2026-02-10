@@ -24,15 +24,36 @@
             </div>
         </div>
 
-        <!-- Reason -->
-        <label>Reason</label>
-        <lightning-textarea value={reason} onchange={handleReasonChange} rows="3" class="form-field">
-        </lightning-textarea>
-
-        <!-- Action Buttons -->
-        <div class="form-actions">
-            <button class="btn-save" onclick={handleSave}>Save changes</button>
-            <button class="btn-cancel" onclick={handleCancel}>Cancel</button>
+        <!-- Duration -->
+        <div class="duration-row">
+            <label>No. of Days (Working Days)</label>
+            <lightning-input type="number" value={duration} onchange={handleDurationChange} min="0.5" step="0.5"
+                class="form-field"></lightning-input>
         </div>
+
+        <template if:false={showConfirmation}>
+            <!-- Reason -->
+            <label>Reason</label>
+            <lightning-textarea value={reason} onchange={handleReasonChange} rows="3" class="form-field">
+            </lightning-textarea>
+
+            <!-- Action Buttons -->
+            <div class="form-actions">
+                <button class="btn-save" onclick={handleSave}>Save changes</button>
+                <button class="btn-cancel" onclick={handleCancel}>Cancel</button>
+            </div>
+        </template>
+
+        <!-- Confirmation View -->
+        <template if:true={showConfirmation}>
+            <div class="confirmation-section">
+                <p class="confirm-text"><b>Confirm details:</b> {duration} day(s) {requestTypeLabel} from {startDate} to
+                    {endDate}.</p>
+                <div class="form-actions">
+                    <button class="btn-confirm" onclick={handleConfirm}>✅ Confirm</button>
+                    <button class="btn-cancel" onclick={handleBackToEdit}>✏️ Edit</button>
+                </div>
+            </div>
+        </template>
     </div>
 </template>

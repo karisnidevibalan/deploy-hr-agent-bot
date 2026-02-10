@@ -8,7 +8,7 @@ function applyLeaveDefaults(details: {
   durationDays?: number | null,
   isHalfDay?: boolean,
   errors?: string[]
-}): typeof details {
+}, holidays: string[] = []): typeof details {
   if (details.startDate) {
     if (details.isHalfDay) {
       details.endDate = details.startDate;
@@ -18,7 +18,7 @@ function applyLeaveDefaults(details: {
         details.endDate = dateParser.projectEndDate(details.startDate, details.durationDays);
       }
     } else if (details.endDate) {
-      details.durationDays = calculateWorkingDays(details.startDate, details.endDate);
+      details.durationDays = calculateWorkingDays(details.startDate, details.endDate, false, holidays);
     } else {
       details.endDate = details.startDate;
       details.durationDays = 1;
@@ -159,16 +159,29 @@ function getSessionId(req: any): string {
   return Buffer.from(ip + ua).toString('base64');
 }
 
-function calculateWorkingDays(startDate: string | null, endDate: string | null, isHalfDay = false): number | null {
+function calculateWorkingDays(startDate: string | null, endDate: string | null, isHalfDay = false, holidays: string[] = []): number | null {
   if (!startDate) {
     return null;
   }
 
   const effectiveEnd = endDate || startDate;
-  const total = dateParser.calculateInclusiveDays(startDate, effectiveEnd, isHalfDay);
+  const total = dateParser.calculateInclusiveDays(startDate, effectiveEnd, isHalfDay, true, holidays);
   // Always return at least 1 for valid single-day leave (unless half-day)
   if (isHalfDay) return 0.5;
   return total >= 1 ? total : 1;
+}
+
+// Helper to get week boundaries (Monday to Sunday) for WFH limit check
+function getWeekBounds(dateStr: string): { monday: string; sunday: string } {
+  const date = new Date(dateStr);
+  const day = date.getDay(); // 0 is Sun, 1 is Mon...
+  const diff = date.getDate() - day + (day === 0 ? -6 : 1); // Monday
+  const monday = new Date(new Date(date).setDate(diff));
+  const sunday = new Date(new Date(date).setDate(diff + 6));
+  return {
+    monday: monday.toISOString().slice(0, 10),
+    sunday: sunday.toISOString().slice(0, 10)
+  };
 }
 
 // Helper function to extract WFH details using enhanced extractor
@@ -179,7 +192,7 @@ function extractWfhDetails(message: string): { date: string | null, reason: stri
 // Helper function to process WFH request
 async function processWfhRequest(
   sessionId: string,
-  details: { date: string | null, reason: string | null, employeeName: string | null },
+  details: { date: string | null, reason: string | null, employeeName: string | null, isException?: boolean },
   ssoContext?: { finalEmail?: string; finalName?: string }
 ): Promise<any> {
   if (!details.date || !details.reason) {
@@ -214,13 +227,44 @@ async function processWfhRequest(
     };
   }
 
-  return await salesforceService.createWfhRecord({
+  // WFH Weekly Limit Check (Max 2 days per week)
+  if (!details.isException) {
+    try {
+      const wfhRequests = employeeEmail ? await salesforceService.getWfhRequestsByEmail(employeeEmail) : [];
+      const { monday, sunday } = getWeekBounds(details.date!);
+      const currentWeekWfh = wfhRequests.filter(r => r.date >= monday && r.date <= sunday && r.status !== 'Rejected');
+
+      if (currentWeekWfh.length >= 2) {
+        return {
+          success: false,
+          isInsufficientBalance: true,
+          message: `⚠️ **Insufficient WFH Allowance**\n\nYou don't have enough WFH allowance to proceed further.\n\nWould you like me to send this as a special exception request for your manager to review? If approved, it will be stored in Salesforce.`
+        };
+      }
+    } catch (error) {
+      console.error('WFH limit check failed:', error);
+    }
+  }
+
+  const result = await salesforceService.createWfhRecord({
     employeeName,
     employeeEmail,
     employeeId,
     date: details.date,
-    reason: details.reason
+    reason: details.reason,
+    isException: !!details.isException
   });
+
+  if (result.success && details.isException) {
+    return {
+      success: true,
+      id: result.id,
+      message: '✅ Exception WFH request sent to your manager for approval (via Salesforce). You will be notified once they review it.',
+      pendingApproval: true
+    };
+  }
+
+  return result;
 }
 
 // Helper function to extract leave details using DateParser service
@@ -235,7 +279,7 @@ interface LeaveDetails {
   errors?: string[];
 }
 
-function extractLeaveDetails(message: string): LeaveDetails {
+function extractLeaveDetails(message: string, holidays: string[] = []): LeaveDetails {
   const parsedDates = dateParser.parseDates(message);
   const durationInfo = dateParser.parseDuration(message);
   const leaveType = extractLeaveType(message);
@@ -265,7 +309,7 @@ function extractLeaveDetails(message: string): LeaveDetails {
   if (finalIsHalfDay) {
     finalDurationDays = 0.5;
   } else {
-    finalDurationDays = calculateWorkingDays(startDate ?? null, endDate ?? null, false) ?? durationInfo.durationDays ?? null;
+    finalDurationDays = calculateWorkingDays(startDate ?? null, endDate ?? null, false, holidays) ?? durationInfo.durationDays ?? null;
     if (finalDurationDays === 0.5) finalIsHalfDay = true;
   }
   if (/\b(a |an )?half([- ]?a)?[- ]?day(s)?\b/i.test(message)) {
@@ -295,12 +339,13 @@ async function processLeaveRequest(
     employeeName: string | null,
     durationDays?: number | null,
     isHalfDay?: boolean,
-    errors?: string[]
+    errors?: string[],
+    isException?: boolean
   },
   ssoContext?: { finalEmail?: string; finalName?: string }
 ): Promise<any> {
   // Block leave creation if any date is a holiday
-  const holidaysData = PolicyService.getPolicy('holidays.json');
+  const holidaysData = await PolicyService.getPolicy('holidays.json');
   const holidaysList = (holidaysData.holidays || []) as any[];
   const leaveDates = [];
   const start = new Date(details.startDate!);
@@ -366,6 +411,24 @@ async function processLeaveRequest(
     };
   }
 
+  const requestedDays = calculateWorkingDays(details.startDate, endDate, Boolean(details.isHalfDay)) || 0;
+
+  if (!details.isException) {
+    try {
+      const balance = await salesforceService.checkLeaveBalance(employeeEmail || '', details.leaveType!, requestedDays);
+      if (balance && !balance.isAvailable) {
+        const formatDays = (value: number) => (Number.isInteger(value) ? `${value}` : value.toFixed(1));
+        return {
+          success: false,
+          isInsufficientBalance: true,
+          message: `⚠️ **Insufficient Balance**\n\nYou don't have enough leave to proceed further.\n\n• Requested: ${formatDays(requestedDays)} day${requestedDays === 1 ? '' : 's'}\n• Available: ${formatDays(balance.remaining)} day${balance.remaining === 1 ? '' : 's'}\n\nWould you like me to send this as a special exception request for your manager to review? If approved, it will be stored in Salesforce.`
+        };
+      }
+    } catch (error) {
+      console.error('Balance check failed during processing:', error);
+    }
+  }
+
   const payload = {
     employeeName,
     employeeEmail,
@@ -374,20 +437,43 @@ async function processLeaveRequest(
     endDate,
     reason: details.reason || 'Personal',
     leaveType: details.leaveType,
-    durationDays: calculateWorkingDays(details.startDate, endDate, Boolean(details.isHalfDay)),
-    isHalfDay: Boolean(details.isHalfDay)
+    durationDays: requestedDays,
+    isHalfDay: Boolean(details.isHalfDay),
+    isException: !!details.isException
   };
 
+  // If this is an exception request, create record in Salesforce (Pending)
+  // Salesforce Flow/Process Builder will handle the email notification based on Is_Exception__c flag
+  if (details.isException) {
+    const result = await salesforceService.createLeaveRecord(payload);
+
+    if (result.success) {
+      return {
+        success: true,
+        id: result.id,
+        message: '✅ Exception leave request sent to your manager for approval (via Salesforce). You will be notified once they review it.',
+        pendingApproval: true
+      };
+    } else {
+      return {
+        success: false,
+        message: '❌ Failed to create exception request in Salesforce. Please try again or contact HR.',
+        error: result.message
+      };
+    }
+  }
+
+  // Normal leave request - create SF record directly
   return await salesforceService.createLeaveRecord(payload);
 }
 
-function getRequestedLeaveDays(details: { startDate?: string | null; endDate?: string | null; durationDays?: number | null; isHalfDay?: boolean | null }): number | null {
+function getRequestedLeaveDays(details: { startDate?: string | null; endDate?: string | null; durationDays?: number | null; isHalfDay?: boolean | null }, holidays: string[] = []): number | null {
   if (typeof details.durationDays === 'number' && details.durationDays > 0) {
     return details.durationDays;
   }
 
   if (details.startDate) {
-    const totalDays = dateParser.calculateInclusiveDays(details.startDate, details.endDate ?? details.startDate, Boolean(details.isHalfDay));
+    const totalDays = dateParser.calculateInclusiveDays(details.startDate, details.endDate ?? details.startDate, Boolean(details.isHalfDay), true, holidays);
     return totalDays > 0 ? totalDays : null;
   }
 
@@ -397,29 +483,36 @@ function getRequestedLeaveDays(details: { startDate?: string | null; endDate?: s
 async function enforceLeaveBalance(
   sessionId: string,
   details: { startDate?: string | null; endDate?: string | null; leaveType?: string | null; durationDays?: number | null },
-  res: Response
+  res: Response,
+  email: string | null = null,
+  holidays: string[] = []
 ): Promise<boolean> {
-  const requestedDays = getRequestedLeaveDays(details);
+  const requestedDays = getRequestedLeaveDays(details, holidays);
   if (!requestedDays || requestedDays <= 0 || !details.leaveType) {
     return false;
   }
 
   try {
-    const userEmail = null;
-    const balance = await salesforceService.checkLeaveBalance('', details.leaveType, requestedDays);
+    const userEmail = email || contextManager.getEmployeeEmail(sessionId) || '';
+    const balance = await salesforceService.checkLeaveBalance(userEmail, details.leaveType, requestedDays);
 
     if (balance && balance.isAvailable === false) {
       const formatDays = (value: number) => (Number.isInteger(value) ? `${value}` : value.toFixed(1));
-      const response = `⚠️ Insufficient leave balance.
+      const response = `⚠️ **Insufficient Balance**
 
-  • Requested: ${formatDays(requestedDays)} day${requestedDays === 1 ? '' : 's'}
-  • Available: ${formatDays(balance.remaining)} day${balance.remaining === 1 ? '' : 's'}
+You don't have enough leave to proceed further.
 
-Please reduce the duration or choose a different leave type.`;
+• Requested: ${formatDays(requestedDays)} day${requestedDays === 1 ? '' : 's'}
+• Available: ${formatDays(balance.remaining)} day${balance.remaining === 1 ? '' : 's'}
 
+Would you like me to send this as a special exception request for your manager to review? If approved, it will be stored in Salesforce.`;
+
+      contextManager.updateContext(sessionId, { awaitingExceptionApproval: true });
+      contextManager.setPendingConfirmation(sessionId, 'leave', details);
       res.json({
         reply: response,
         intent: 'leave_balance_insufficient',
+        showButtons: true,
         timestamp: new Date().toISOString()
       });
       return true;
@@ -433,27 +526,29 @@ Please reduce the duration or choose a different leave type.`;
 
 async function handleLeaveEditRequest(
   sessionId: string,
-  pending: { details: any },
+  pending: { details: any } | null,
   editDetails: any,
   message: string,
   res: Response,
-  ssoContext?: { finalEmail?: string; finalName?: string }
+  ssoContext?: { finalEmail?: string; finalName?: string },
+  holidays: string[] = []
 ): Promise<boolean> {
+  contextManager.updateContext(sessionId, { awaitingExceptionApproval: false });
   const detailsFromForm = editDetails && typeof editDetails === 'object' ? editDetails : null;
   let newDetails: any = null;
 
   if (detailsFromForm) {
-    const updatedStart = detailsFromForm.startDate || pending.details.startDate;
-    const updatedEnd = detailsFromForm.endDate || updatedStart || pending.details.endDate;
+    const updatedStart = detailsFromForm.startDate || (pending ? pending.details.startDate : null);
+    const updatedEnd = detailsFromForm.endDate || updatedStart || (pending ? pending.details.endDate : null);
     newDetails = {
-      ...pending.details,
-      leaveType: detailsFromForm.leaveType || pending.details.leaveType,
+      ...(pending ? pending.details : {}),
+      leaveType: detailsFromForm.leaveType || (pending ? pending.details.leaveType : null),
       startDate: updatedStart,
       endDate: updatedEnd,
-      reason: detailsFromForm.reason ?? pending.details.reason ?? 'Personal',
-      employeeName: pending.details.employeeName || 'You'
+      reason: detailsFromForm.reason ?? (pending ? pending.details.reason : 'Personal'),
+      employeeName: (pending ? pending.details.employeeName : (ssoContext?.finalName || contextManager.getEmployeeName(sessionId) || DEFAULT_EMPLOYEE_NAME))
     };
-  } else {
+  } else if (pending) {
     newDetails = extractLeaveDetails(message);
     if (newDetails) {
       newDetails = {
@@ -464,7 +559,7 @@ async function handleLeaveEditRequest(
   }
 
   if (newDetails) {
-    newDetails = applyLeaveDefaults(newDetails);
+    newDetails = applyLeaveDefaults(newDetails, holidays);
   }
 
   if (newDetails?.errors?.length) {
@@ -484,9 +579,12 @@ Please provide corrected dates to continue editing your leave request.`,
   }
 
   if (newDetails && newDetails.startDate && newDetails.leaveType) {
+    const userEmail = ssoContext?.finalEmail || contextManager.getEmployeeEmail(sessionId);
+    if (await enforceLeaveBalance(sessionId, newDetails, res, userEmail, holidays)) return true;
+
     // Block confirmation if the requested date is a holiday (move BEFORE confirmation)
     newDetails.reason = newDetails.reason || 'Personal';
-    const holidaysData = PolicyService.getPolicy('holidays.json');
+    const holidaysData = await PolicyService.getPolicy('holidays.json');
     const holidaysList = (holidaysData.holidays || []) as any[];
     const leaveDates = [];
     const start = new Date(newDetails.startDate);
@@ -538,19 +636,19 @@ Tap a button below when you're ready.`;
   const fallbackReply = `✏️ Got it! Let's update your leave request.
 
 **Current Details:**
-Type: ${pending.details.leaveType}
-Date: ${pending.details.startDate}${pending.details.endDate && pending.details.endDate !== pending.details.startDate ? ' to ' + pending.details.endDate : ''}
+Type: ${pending?.details.leaveType || 'Not specify'}
+Date: ${pending?.details.startDate || ''}${pending?.details.endDate && pending?.details.endDate !== pending?.details.startDate ? ' to ' + pending?.details.endDate : ''}
 
-Reason: ${pending.details.reason || 'Personal'}
+Reason: ${pending?.details.reason || 'Personal'}
 Status: Pending Approval
 Your manager has been notified and will review your request shortly.`;
 
   const fallbackReplyLeave = `✏️ Got it! Let's update your leave request.
 
 **Current Details:**
-• Date: ${pending.details.startDate}
-• Type: ${pending.details.leaveType}
-• Reason: ${pending.details.reason || 'Personal'}
+• Date: ${pending?.details.startDate || 'N/A'}
+• Type: ${pending?.details.leaveType || 'N/A'}
+• Reason: ${pending?.details.reason || 'Personal'}
 
 Please provide the complete NEW information. For example:
 "Casual leave on 20.12.2025 for family event"`;
@@ -563,27 +661,28 @@ Please provide the complete NEW information. For example:
   return true;
 }
 
-function handleWfhEditRequest(
+async function handleWfhEditRequest(
   sessionId: string,
-  pending: { details: any },
+  pending: { details: any } | null,
   editDetails: any,
   message: string,
   res: Response,
   ssoContext?: { finalEmail?: string; finalName?: string }
-): boolean {
+): Promise<boolean> {
+  contextManager.updateContext(sessionId, { awaitingExceptionApproval: false });
   const detailsFromForm = editDetails && typeof editDetails === 'object' ? editDetails : null;
   let newDetails: any = null;
 
   if (detailsFromForm) {
     newDetails = {
-      ...pending.details,
-      date: detailsFromForm.date || detailsFromForm.startDate || pending.details.date || pending.details.startDate,
-      startDate: detailsFromForm.startDate || pending.details.startDate || pending.details.date,
-      endDate: detailsFromForm.endDate || detailsFromForm.startDate || pending.details.endDate || pending.details.startDate || pending.details.date,
-      reason: detailsFromForm.reason ?? pending.details.reason ?? 'Personal',
-      employeeName: pending.details.employeeName || 'You'
+      ...(pending ? pending.details : {}),
+      date: detailsFromForm.date || detailsFromForm.startDate || (pending ? (pending.details.date || pending.details.startDate) : null),
+      startDate: detailsFromForm.startDate || (pending ? (pending.details.startDate || pending.details.date) : null),
+      endDate: detailsFromForm.endDate || detailsFromForm.startDate || (pending ? (pending.details.endDate || pending.details.startDate || pending.details.date) : null),
+      reason: detailsFromForm.reason ?? (pending ? pending.details.reason : 'Personal'),
+      employeeName: (pending ? pending.details.employeeName : 'You')
     };
-  } else {
+  } else if (pending) {
     newDetails = extractWfhDetails(message);
     if (newDetails) {
       newDetails = {
@@ -602,6 +701,33 @@ function handleWfhEditRequest(
       });
       return true;
     }
+
+    // WFH Weekly Limit Check
+    const userEmail = ssoContext?.finalEmail || contextManager.getEmployeeEmail(sessionId);
+    try {
+      const wfhRequests = userEmail ? await salesforceService.getWfhRequestsByEmail(userEmail) : [];
+      const { monday, sunday } = getWeekBounds(newDetails.date);
+      const currentWeekWfh = wfhRequests.filter(r => r.date >= monday && r.date <= sunday && r.status !== 'Rejected');
+
+      if (currentWeekWfh.length >= 2) {
+        contextManager.updateContext(sessionId, { awaitingExceptionApproval: true });
+        contextManager.setPendingConfirmation(sessionId, 'wfh', newDetails);
+        res.json({
+          reply: `⚠️ **Insufficient WFH Allowance**
+
+You don't have enough WFH allowance to proceed further.
+
+Would you like me to send this as a special exception request for your manager to review? If approved, it will be stored in Salesforce.`,
+          intent: 'wfh_balance_insufficient',
+          showButtons: true,
+          timestamp: new Date().toISOString()
+        });
+        return true;
+      }
+    } catch (e) {
+      console.error('WFH edit limit check failed:', e);
+    }
+
     newDetails.reason = newDetails.reason || 'Personal';
     newDetails.employeeName = contextManager.getEmployeeName(sessionId) || newDetails.employeeName || DEFAULT_EMPLOYEE_NAME;
     contextManager.setPendingConfirmation(sessionId, 'wfh', newDetails);
@@ -630,8 +756,8 @@ Tap a button below when you're ready.`;
   const fallbackReplyWfh = `✏️ Got it! Let's update your WFH request.
 
 **Current Details:**
-• Date: ${pending.details.date}
-• Reason: ${pending.details.reason || 'Personal'}
+• Date: ${pending?.details.date || 'N/A'}
+• Reason: ${pending?.details.reason || 'Personal'}
 
 Please provide the complete NEW information. For example:
 "WFH on 20.12.2025 for doctor appointment"`;
@@ -681,18 +807,35 @@ const chatController = async (req: Request, res: Response) => {
 
   const currentDate = new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
   try {
+    // Fetch holidays once per request for day calculation consistency
+    const holidaysData = await PolicyService.getPolicy('holidays.json');
+    const holidaysList = (holidaysData.holidays || []) as any[];
+    const holidayDates = holidaysList.map(h => h.date);
+
     // SSO Context already extracted above
 
     // PRIORITY 1: Handle UI Actions (Forms, Buttons)
-    if (editDetails || confirmationAction) {
+    if (editDetails || (confirmationAction && confirmationAction.toLowerCase() === 'edit')) {
       const pending = pendingFromClient || contextManager.getPendingConfirmation(sessionId);
-      if (pending) {
+
+      // even if no pending, if editDetails exist, we handle as a direct form submission
+      if (editDetails) {
+        // Detect type from editDetails if possible
+        const isWfh = !!editDetails.date || (pending && pending.type === 'wfh');
+        if (isWfh) {
+          const handled = await handleWfhEditRequest(sessionId, pending, editDetails, message, res, { finalEmail, finalName });
+          if (handled) return;
+        } else {
+          const handled = await handleLeaveEditRequest(sessionId, pending, editDetails, message, res, { finalEmail, finalName }, holidayDates);
+          if (handled) return;
+        }
+      } else if (pending) {
         if (pending.type === 'leave') {
           // Pass full context for Salesforce create
-          const handled = await handleLeaveEditRequest(sessionId, pending, editDetails, message, res, { finalEmail, finalName });
+          const handled = await handleLeaveEditRequest(sessionId, pending, editDetails, message, res, { finalEmail, finalName }, holidayDates);
           if (handled) return;
         } else if (pending.type === 'wfh') {
-          const handled = handleWfhEditRequest(sessionId, pending, editDetails, message, res, { finalEmail, finalName });
+          const handled = await handleWfhEditRequest(sessionId, pending, editDetails, message, res, { finalEmail, finalName });
           if (handled) return;
         }
       }
@@ -727,24 +870,35 @@ const chatController = async (req: Request, res: Response) => {
 
     // Check if user is responding to confirmation
 
+    const context = contextManager.getContext(sessionId);
     const pendingConfirmation = contextManager.getPendingConfirmation(sessionId);
     const confirmation = normalizedConfirmationAction || entityExtractor.extractConfirmation(message);
 
     if (pendingConfirmation) {
       if (confirmation === 'yes') {
+        const isExceptionRequest = !!context.awaitingExceptionApproval;
+        if (isExceptionRequest) {
+          contextManager.updateContext(sessionId, { awaitingExceptionApproval: false });
+          pendingConfirmation.details.isException = true;
+        }
+
         contextManager.clearPendingConfirmation(sessionId);
         if (pendingConfirmation.type === 'leave') {
           const result = await processLeaveRequest(sessionId, pendingConfirmation.details, { finalEmail, finalName });
           if (result.success) {
+            const successMsg = pendingConfirmation.details.isException
+              ? `✅ Exception leave request sent successfully!\n\nType: ${pendingConfirmation.details.leaveType}\nDate: ${pendingConfirmation.details.startDate} to ${pendingConfirmation.details.endDate}\nStatus: Exception Pending\n\nYour special request has been sent to the manager for review.`
+              : `✅ Leave request created successfully!\n\nType: ${pendingConfirmation.details.leaveType}\nDate: ${pendingConfirmation.details.startDate} to ${pendingConfirmation.details.endDate}\nStatus: Pending Approval\n\nYour request has been sent to the manager.`;
+
             return res.json({
-              reply: `✅ Leave request created successfully!\n\nType: ${pendingConfirmation.details.leaveType}\nDate: ${pendingConfirmation.details.startDate} to ${pendingConfirmation.details.endDate}\nStatus: Pending Approval\n\nYour manager has been notified.`,
+              reply: successMsg,
               intent: 'leave_created',
               timestamp: new Date().toISOString()
             });
           } else {
             console.error('❌ Leave creation failed:', result.message);
             return res.json({
-              reply: `❌ Sorry, I couldn't create that request: ${result.message || 'Unknown error'}`,
+              reply: result.isInsufficientBalance ? result.message : `❌ Sorry, I couldn't create that request: ${result.message || 'Unknown error'}`,
               intent: 'error',
               timestamp: new Date().toISOString()
             });
@@ -752,21 +906,26 @@ const chatController = async (req: Request, res: Response) => {
         } else if (pendingConfirmation.type === 'wfh') {
           const result = await processWfhRequest(sessionId, pendingConfirmation.details, { finalEmail, finalName });
           if (result.success) {
+            const successMsg = pendingConfirmation.details.isException
+              ? `✅ Exception WFH request sent successfully!\n\nDate: ${pendingConfirmation.details.date}\nStatus: Exception Pending\n\nYour special request has been sent to the manager for review.`
+              : `✅ WFH request created successfully!\n\nDate: ${pendingConfirmation.details.date}\nStatus: Pending Approval\n\nYour request has been sent to the manager.`;
+
             return res.json({
-              reply: `✅ WFH request created successfully!\n\nDate: ${pendingConfirmation.details.date}\nStatus: Pending Approval\n\nYour manager has been notified.`,
+              reply: successMsg,
               intent: 'wfh_created',
               timestamp: new Date().toISOString()
             });
           } else {
             console.error('❌ WFH creation failed:', result.message);
             return res.json({
-              reply: `❌ Sorry, I couldn't create that request: ${result.message || 'Unknown error'}`,
+              reply: result.isInsufficientBalance ? result.message : `❌ Sorry, I couldn't create that request: ${result.message || 'Unknown error'}`,
               intent: 'error',
               timestamp: new Date().toISOString()
             });
           }
         }
       } else if (confirmation === 'no') {
+        contextManager.updateContext(sessionId, { awaitingExceptionApproval: false });
         contextManager.clearPendingConfirmation(sessionId);
         return res.json({
           reply: "ℹ️ Request cancelled. How else can I help you?",
@@ -840,194 +999,49 @@ const chatController = async (req: Request, res: Response) => {
     // Switch block for intent handling
     switch (currentIntent) {
       case 'apply_leave': {
-        const currentStep = leaveState.step || 'start';
-        const updatedDetails = { ...leaveState };
         const entities = analysis.entities || {};
+        const extracted = extractLeaveDetails(message, holidayDates);
 
-        if (currentStep === 'start' || currentStep === 'date') {
-          const startDate = entities.startDate || entities.date || extractLeaveDetails(message).startDate;
-          if (startDate) {
-            if (dateParser.isPastDate(startDate)) {
-              return res.json({
-                reply: `❌ Cannot apply leave for a past date (${startDate}). Please select today or a future date.`,
-                intent: 'past_date_error',
-                timestamp: new Date().toISOString()
-              });
-            }
-            updatedDetails.startDate = startDate;
-            updatedDetails.endDate = entities.endDate || updatedDetails.startDate;
-            updatedDetails.step = 'reason';
-            contextManager.setAwaitingLeaveDetails(sessionId, updatedDetails);
-            return res.json({
-              reply: `📝 **What is the reason for your leave on ${updatedDetails.startDate}?**`,
-              intent: 'ask_leave_reason'
-            });
-          } else {
-            updatedDetails.step = 'date';
-            contextManager.setAwaitingLeaveDetails(sessionId, updatedDetails);
-            return res.json({
-              reply: `🗓️ **When would you like to take leave?**\n\nPlease provide the date(s) (e.g. "Oct 18" or "Tomorrow").`,
-              intent: 'ask_leave_date'
-            });
-          }
-        }
+        const details = {
+          startDate: entities.startDate || entities.date || extracted.startDate,
+          endDate: entities.endDate || extracted.endDate || entities.startDate || entities.date || extracted.startDate,
+          leaveType: entities.leaveType || extracted.leaveType,
+          reason: entities.reason || extracted.reason,
+          employeeName: DEFAULT_EMPLOYEE_NAME
+        };
 
-        if (currentStep === 'reason') {
-          const reason = entities.reason || (message.length >= 3 ? message : null);
-          if (!reason) {
-            return res.json({
-              reply: `📝 Could you please specify why you need leave?`,
-              intent: 'ask_leave_reason_retry'
-            });
-          }
-          updatedDetails.reason = reason;
-          updatedDetails.step = 'type';
-          contextManager.setAwaitingLeaveDetails(sessionId, updatedDetails);
-          const inferred = entities.leaveType || extractLeaveType(message);
+        const finalDetails = applyLeaveDefaults(details, holidayDates);
 
-          // Determine options based on gender
-          let options = "Annual, Sick, Casual";
-          const context = contextManager.getContext(sessionId);
-          if (!context.gender) {
-            const gender = await salesforceService.getUserGender(finalEmail);
-            contextManager.updateContext(sessionId, { gender });
-          }
-          const userGender = contextManager.getContext(sessionId).gender;
-
-          if (userGender === 'Female') options += ", Maternity";
-          if (userGender === 'Male') options += ", Paternity";
-
-          return res.json({
-            reply: `🏖️ ${inferred ? `Potentially ${inferred} leave. ` : ''}**What type of leave is this?**\n(Options: ${options})`,
-            intent: 'ask_leave_type'
-          });
-        }
-
-        if (currentStep === 'type') {
-          const type = entities.leaveType || extractLeaveType(message);
-          if (type) {
-            // Eligibility Check
-            const userGender = contextManager.getContext(sessionId).gender;
-            if (type === 'MATERNITY' && userGender === 'Male') {
-              return res.json({ reply: "❌ Maternity leave is only available for female employees. Please choose a different type (Annual, Sick, Casual).", intent: 'eligibility_error' });
-            }
-            if (type === 'PATERNITY' && userGender === 'Female') {
-              return res.json({ reply: "❌ Paternity leave is only available for male employees. Please choose a different type (Annual, Sick, Casual).", intent: 'eligibility_error' });
-            }
-            if ((type === 'MATERNITY' || type === 'PATERNITY') && userGender === 'Unknown') {
-              contextManager.updateContext(sessionId, { awaitingLeaveDetails: { ...updatedDetails, leaveType: type, step: 'clarify_gender' } });
-              return res.json({
-                reply: `I see you're applying for ${type.toLowerCase()} leave. To proceed, I need to know: Are you applying as a Male or Female employee?`,
-                intent: 'ask_gender_clarification'
-              });
-            }
-
-            updatedDetails.leaveType = type;
-            updatedDetails.step = 'confirm';
-          } else {
-            return res.json({
-              reply: `🏖️ Please specify a valid leave type.`,
-              intent: 'ask_leave_type_retry'
-            });
-          }
-        }
-
-        if (currentStep === 'clarify_gender') {
-          const lowerMsg = message.toLowerCase();
-          let gender: 'Male' | 'Female' | 'Unknown' = 'Unknown';
-          if (lowerMsg.includes('female') || lowerMsg.includes('woman') || lowerMsg.includes('lady')) gender = 'Female';
-          else if (lowerMsg.includes('male') || lowerMsg.includes('man') || lowerMsg.includes('gentleman')) gender = 'Male';
-
-          if (gender !== 'Unknown') {
-            contextManager.updateContext(sessionId, { gender });
-            const type = updatedDetails.leaveType;
-            if ((type === 'MATERNITY' && gender === 'Male') || (type === 'PATERNITY' && gender === 'Female')) {
-              updatedDetails.step = 'type';
-              contextManager.setAwaitingLeaveDetails(sessionId, updatedDetails);
-              return res.json({ reply: `❌ I see. However, ${type.toLowerCase()} leave is not available for ${gender.toLowerCase()} employees. Please choose a different type.`, intent: 'eligibility_error' });
-            }
-            updatedDetails.step = 'confirm';
-          } else {
-            return res.json({ reply: "I'm sorry, I didn't catch that. To proceed, please specify if you are a Male or Female employee.", intent: 'ask_gender_clarification_retry' });
-          }
-        }
-
-        const leaveDetails = applyLeaveDefaults({ ...updatedDetails, employeeName: DEFAULT_EMPLOYEE_NAME });
-        contextManager.clearAwaitingLeaveDetails(sessionId);
-        contextManager.setPendingConfirmation(sessionId, 'leave', leaveDetails);
         return res.json({
-          reply: `📋 **Confirm your leave request:**\n\n• **Type**: ${leaveDetails.leaveType}\n• **Date**: ${leaveDetails.startDate}${leaveDetails.endDate && leaveDetails.endDate !== leaveDetails.startDate ? ' to ' + leaveDetails.endDate : ''}\n• **Reason**: ${leaveDetails.reason}`,
-          intent: 'confirm_leave',
-          showButtons: true,
-          pendingRequest: { type: 'leave', details: leaveDetails }
+          reply: "Please review and complete your leave request details below:",
+          intent: 'apply_leave',
+          showForm: true,
+          isEdit: false,
+          details: finalDetails,
+          timestamp: new Date().toISOString()
         });
       }
 
       case 'apply_wfh': {
-        const currentStep = wfhState.step || 'start';
-        const updatedDetails = { ...wfhState };
         const entities = analysis.entities || {};
+        const extracted = extractWfhDetails(message);
 
-        if (currentStep === 'start' || currentStep === 'date') {
-          // TARGETED FIX: If the message is exactly the button payload, force asking for date
-          // This prevents "I want to apply for WFH" from inferring today's date via AI/Extractor defaults
-          const isButtonPayload = lowerMessage.includes('i want to apply for wfh');
+        const details = {
+          date: entities.date || entities.startDate || extracted.date,
+          startDate: entities.startDate || entities.date || extracted.date,
+          endDate: entities.endDate || entities.startDate || entities.date || extracted.date,
+          reason: entities.reason || extracted.reason,
+          employeeName: DEFAULT_EMPLOYEE_NAME,
+          step: 'confirm'
+        };
 
-          let date = entities.date || entities.startDate || extractWfhDetails(message).date;
-
-          if (currentStep === 'start' && isButtonPayload) {
-            date = null;
-          }
-
-          if (date) {
-            if (dateParser.isPastDate(date)) {
-              return res.json({
-                reply: `❌ Cannot apply WFH for a past date (${date}). Please select today or a future date.`,
-                intent: 'past_date_error',
-                timestamp: new Date().toISOString()
-              });
-            }
-            updatedDetails.date = date;
-            updatedDetails.startDate = date;
-            updatedDetails.endDate = entities.endDate || date;
-            updatedDetails.step = 'reason';
-            contextManager.setAwaitingWfhDetails(sessionId, updatedDetails);
-            return res.json({
-              reply: `📝 **What is the reason for WFH on ${updatedDetails.startDate}${updatedDetails.endDate !== updatedDetails.startDate ? ' to ' + updatedDetails.endDate : ''}?**`,
-              intent: 'ask_wfh_reason'
-            });
-          } else {
-            updatedDetails.step = 'date';
-            contextManager.setAwaitingWfhDetails(sessionId, updatedDetails);
-            return res.json({
-              reply: `🏠 **When would you like to WFH?**\n(e.g. "tomorrow" or "25th Jan")`,
-              intent: 'ask_wfh_date'
-            });
-          }
-        }
-
-        if (currentStep === 'reason') {
-          const reason = entities.reason || (message.length >= 3 ? message : null);
-          if (!reason) {
-            return res.json({
-              reply: `📝 Could you please provide a reason for your WFH request?`,
-              intent: 'ask_wfh_reason_retry'
-            });
-          }
-          updatedDetails.reason = reason;
-          updatedDetails.step = 'confirm';
-        }
-
-        contextManager.clearAwaitingWfhDetails(sessionId);
-        contextManager.setPendingConfirmation(sessionId, 'wfh', updatedDetails);
-        const dateDisplay = updatedDetails.startDate && updatedDetails.endDate && updatedDetails.startDate !== updatedDetails.endDate
-          ? `${updatedDetails.startDate} to ${updatedDetails.endDate}`
-          : (updatedDetails.date || updatedDetails.startDate);
         return res.json({
-          reply: `📋 **Confirm your WFH request:**\n\n• **Date**: ${dateDisplay}\n• **Reason**: ${updatedDetails.reason}`,
-          intent: 'confirm_wfh',
-          showButtons: true,
-          pendingRequest: { type: 'wfh', details: updatedDetails }
+          reply: "Please review and complete your WFH request details below:",
+          intent: 'apply_wfh',
+          showForm: true,
+          isEdit: false,
+          details: details,
+          timestamp: new Date().toISOString()
         });
       }
 
@@ -1115,7 +1129,7 @@ const chatController = async (req: Request, res: Response) => {
 
       case 'holiday_list': {
         try {
-          const holidaysData = PolicyService.getAllHolidays();
+          const holidaysData = await PolicyService.getAllHolidays();
           let holidays = holidaysData.holidays || [];
           const queryYear = analysis.entities?.year;
           const queryMonth = analysis.entities?.month;
@@ -1124,6 +1138,7 @@ const chatController = async (req: Request, res: Response) => {
 
           const lowerMsg = message.toLowerCase();
           const isCountQuery = lowerMsg.includes('how many') || lowerMsg.includes('count') || lowerMsg.includes('number of') || lowerMsg.includes('total') || lowerMsg.includes('no of');
+          const currentYear = new Date().getFullYear();
 
           if (startDate && endDate) {
             const start = new Date(startDate).getTime();
@@ -1133,33 +1148,40 @@ const chatController = async (req: Request, res: Response) => {
               return hDate >= start && hDate <= end;
             });
           } else if (queryMonth) {
-            // Fallback if only month index provided without dates (should be rare with new AiService)
             holidays = holidays.filter((h: any) => {
               const hDate = new Date(h.date);
-              return !isNaN(hDate.getTime()) && (hDate.getMonth() + 1) === queryMonth;
+              const hMonth = hDate.getMonth() + 1;
+              const hYear = hDate.getFullYear();
+              return !isNaN(hDate.getTime()) && hMonth === queryMonth && (!queryYear || hYear === queryYear);
             });
           } else if (queryYear) {
             holidays = holidays.filter((h: any) => h.date.startsWith(queryYear.toString()));
+          } else {
+            // Default to current year if no period specified to be efficient
+            holidays = holidays.filter((h: any) => h.date.startsWith(currentYear.toString()));
           }
 
           if (holidays.length === 0) {
-            let period = queryYear || 'the current period';
-            if (startDate) period = `${startDate} to ${endDate}`;
-            else if (queryMonth) period = `this month (${queryMonth}/${queryYear || new Date().getFullYear()})`;
+            let period = queryYear || currentYear;
+            if (startDate && endDate) period = `${startDate} to ${endDate}`;
+            else if (queryMonth) {
+              const monthName = new Date(2000, queryMonth - 1).toLocaleString('default', { month: 'long' });
+              period = `${monthName} ${queryYear || currentYear}`;
+            }
 
             return res.json({ reply: `I couldn't find any holidays for ${period}.`, intent: 'holiday_list', timestamp: new Date().toISOString() });
           }
 
           if (isCountQuery) {
             let periodText = "";
-            if (startDate) {
-              if (lowerMsg.includes('week')) periodText = " in this week"; // Contextual polish
+            if (startDate && endDate) {
+              if (lowerMsg.includes('week')) periodText = " in this week";
               else periodText = ` from ${startDate} to ${endDate}`;
             } else if (queryMonth) {
               const monthName = new Date(2000, queryMonth - 1).toLocaleString('default', { month: 'long' });
-              periodText = ` in ${monthName}${queryYear ? ' ' + queryYear : ''}`;
-            } else if (queryYear) {
-              periodText = ` in ${queryYear}`;
+              periodText = ` in ${monthName}${queryYear ? ' ' + queryYear : ' ' + currentYear}`;
+            } else {
+              periodText = ` in ${queryYear || currentYear}`;
             }
 
             return res.json({
@@ -1189,7 +1211,7 @@ const chatController = async (req: Request, res: Response) => {
 
       case 'is_holiday': {
         try {
-          const holidaysData = PolicyService.getAllHolidays();
+          const holidaysData = await PolicyService.getAllHolidays();
           const holidays = holidaysData.holidays || [];
           const targetDate = analysis.entities?.date || new Date().toISOString().split('T')[0];
 

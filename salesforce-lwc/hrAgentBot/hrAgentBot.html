@@ -1,7 +1,13 @@
 <template>
-    <!-- Direct Iframe - No Launcher Button -->
     <div class="bot-container">
-        <iframe src={botUrl} class="bot-frame" title="HR Agent Bot" allow="microphone">
-        </iframe>
+        <template if:true={isLoaded}>
+            <iframe src={iframeUrl} class="bot-frame" title="HR Agent Bot" allow="microphone">
+            </iframe>
+        </template>
+        <template if:false={isLoaded}>
+            <div class="loading-state">
+                <lightning-spinner alternative-text="Loading HR Assistant..." size="medium"></lightning-spinner>
+            </div>
+        </template>
     </div>
 </template>

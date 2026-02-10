@@ -155,7 +155,7 @@ export class DateParserService {
     return format(parsed, 'MMMM d, yyyy');
   }
 
-  calculateInclusiveDays(startDate: string, endDate: string, isHalfDay = false, excludeWeekends = true): number {
+  calculateInclusiveDays(startDate: string, endDate: string, isHalfDay = false, excludeWeekends = true, holidays: string[] = []): number {
     const startParsed = this.tryParseISO(startDate);
     const endParsed = this.tryParseISO(endDate);
 
@@ -173,7 +173,12 @@ export class DateParserService {
 
     while (cur <= end) {
       const day = cur.getDay();
-      if (!excludeWeekends || (day !== 0 && day !== 6)) {
+      const isoDate = this.toISO(cur);
+
+      const isWeekend = excludeWeekends && (day === 0 || day === 6);
+      const isHoliday = holidays.includes(isoDate);
+
+      if (!isWeekend && !isHoliday) {
         count++;
       }
       cur.setDate(cur.getDate() + 1);

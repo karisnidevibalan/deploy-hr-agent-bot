@@ -5,85 +5,85 @@
       "date": "2027-01-01",
       "name": "New Year",
       "day": "Friday",
-      "type": "National Holiday"
+      "type": "Public Holiday"
     },
     {
       "date": "2027-01-14",
       "name": "Pongal / Makar Sankranti",
       "day": "Thursday",
-      "type": "Festival"
+      "type": "Public Holiday"
     },
     {
       "date": "2027-01-26",
       "name": "Republic Day",
       "day": "Tuesday",
-      "type": "National Holiday"
+      "type": "Public Holiday"
     },
     {
       "date": "2027-03-25",
       "name": "Holi",
       "day": "Thursday",
-      "type": "Festival"
+      "type": "Public Holiday"
     },
     {
       "date": "2027-03-30",
       "name": "Ugadi",
       "day": "Tuesday",
-      "type": "Festival"
+      "type": "Public Holiday"
     },
     {
       "date": "2027-04-02",
       "name": "Good Friday",
-      "day": "Saturday",
-      "type": "Religious Holiday"
+      "day": "Friday",
+      "type": "Public Holiday"
     },
     {
       "date": "2027-04-14",
       "name": "Tamil New Year / Ambedkar Jayanti",
       "day": "Wednesday",
-      "type": "Festival"
+      "type": "Public Holiday"
     },
     {
       "date": "2027-05-01",
       "name": "Labour Day",
       "day": "Saturday",
-      "type": "National Holiday"
+      "type": "Public Holiday"
     },
     {
       "date": "2027-08-15",
       "name": "Independence Day",
-      "day": "Monday",
-      "type": "National Holiday"
+      "day": "Sunday",
+      "type": "Public Holiday"
     },
     {
       "date": "2027-08-18",
       "name": "Ganesh Chaturthi",
-      "day": "Thursday",
-      "type": "Festival"
+      "day": "Wednesday",
+      "type": "Public Holiday"
     },
     {
       "date": "2027-10-02",
       "name": "Gandhi Jayanti",
       "day": "Saturday",
-      "type": "National Holiday"
+      "type": "Public Holiday"
     },
     {
       "date": "2027-10-11",
       "name": "Dussehra",
       "day": "Monday",
-      "type": "Festival"
+      "type": "Public Holiday"
     },
     {
       "date": "2027-11-01",
       "name": "Diwali",
       "day": "Monday",
-      "type": "Festival"
+      "type": "Public Holiday"
     },
     {
       "date": "2027-12-25",
       "name": "Christmas",
       "day": "Saturday",
-      "type": "Religious Holiday"
+      "type": "Public Holiday"
     }
   ]
 }

@@ -19,6 +19,7 @@
     "docker:run": "docker run -p 5000:5000 --env-file .env.local hr-agent-bot"
   },
   "dependencies": {
+    "@types/nodemailer": "^7.0.9",
     "axios": "^1.5.0",
     "chrono-node": "^2.9.0",
     "compromise": "^14.3.0",
@@ -31,6 +32,7 @@
     "mammoth": "^1.11.0",
     "multer": "^2.0.0",
     "node-cron": "^3.0.2",
+    "nodemailer": "^8.0.1",
     "pdf-parse": "^2.4.5",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",

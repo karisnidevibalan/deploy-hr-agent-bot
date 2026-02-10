@@ -1,35 +1,22 @@
-import * as fs from 'fs';
 import * as path from 'path';
 import Groq from "groq-sdk";
-const pdf = require('pdf-parse');
+const { PDFParse } = require('pdf-parse');
 import mammoth from 'mammoth';
+import { SalesforceService } from './salesforceService';
 
 const groq = new Groq({
     apiKey: process.env.GROQ_API_KEY
 });
 
 export class PolicyService {
-    private static dataDir = (() => {
-        const paths = [
-            path.join(process.cwd(), 'src', 'data'),
-            path.join(process.cwd(), 'dist', 'src', 'data'),
-            path.join(process.cwd(), 'data')
-        ];
-        const existingPath = paths.find(p => fs.existsSync(p));
-        const finalPath = existingPath || path.join(process.cwd(), 'data');
-
-        // Ensure the directory exists
-        if (!fs.existsSync(finalPath)) {
-            fs.mkdirSync(finalPath, { recursive: true });
-        }
-        return finalPath;
-    })();
+    private static salesforceService = new SalesforceService();
 
     static async extractText(file: Express.Multer.File): Promise<string> {
         const extension = path.extname(file.originalname).toLowerCase();
 
         if (extension === '.pdf') {
-            const data = await pdf(file.buffer);
+            const parser = new PDFParse({ data: file.buffer });
+            const data = await parser.getText();
             return data.text;
         } else if (extension === '.docx' || extension === '.doc') {
             const result = await mammoth.extractRawText({ buffer: file.buffer });
@@ -43,11 +30,10 @@ export class PolicyService {
     static async updatePolicyFromJson(policyType: string, text: string): Promise<{ success: boolean; message: string }> {
         try {
             let schema = '';
-            let fileName = '';
+            let existingData: any = null;
 
             switch (policyType.toLowerCase()) {
                 case 'leave':
-                    fileName = 'leavePolicy.json';
                     schema = `
             {
               "companyName": "string",
@@ -65,7 +51,6 @@ export class PolicyService {
           `;
                     break;
                 case 'holiday':
-                    fileName = 'holidays.json';
                     schema = `
             {
               "year": number,
@@ -76,7 +61,6 @@ export class PolicyService {
           `;
                     break;
                 case 'wfh':
-                    fileName = 'wfhPolicy.json';
                     schema = `
             {
               "policyName": "string",
@@ -88,7 +72,6 @@ export class PolicyService {
           `;
                     break;
                 case 'reimbursement':
-                    fileName = 'reimbursement-policy.json';
                     schema = `
             {
               "policyName": "string",
@@ -104,19 +87,40 @@ export class PolicyService {
                     return { success: false, message: 'Invalid policy type' };
             }
 
+            // Fetch existing policy from Salesforce (except for Holidays initially, logic preserved)
+            // Actually, with Salesforce we can query without knowing the file name. 
+            // But for Holidays, we need the YEAR to find the exact record.
+            // Simplified: Fetch latest policy of this type to give context.
+            if (policyType.toLowerCase() !== 'holiday') {
+                try {
+                    existingData = await this.salesforceService.getPolicy(policyType);
+                    if (existingData) {
+                        console.log(`🔹 Found existing ${policyType} policy in Salesforce to merge.`);
+                    }
+                } catch (e) {
+                    console.warn(`⚠️ Failed to read existing ${policyType} policy, starting fresh.`);
+                }
+            }
+
             const prompt = `
         You are an expert HR data analyst. 
-        Transform the following policy text into a structured JSON format matching this schema:
+        Update the following policy data with information from the new document text.
+        
+        Target Schema:
         ${schema}
 
-        IMPORTANT:
-        1. Keep descriptions concise but accurate.
-        2. Ensure all fields in the schema are present.
-        3. If some information is missing, use sensible defaults or "Not specified".
-        4. Return ONLY the JSON object, no other text.
+        Existing Data (JSON):
+        ${existingData ? JSON.stringify(existingData) : "null (No existing data, generate fresh)"}
 
-        Policy Text:
+        New Document Text:
         ${text}
+
+        Instructions:
+        1. Merge the new information into the Existing Data following the Target Schema.
+        2. If Existing Data is present, PRESERVE it unless the New Document explicitly contradicts or updates it.
+        3. ADD new fields or records found in the New Document.
+        4. For 'holidays', if the New Document contains a different year than existing files, just extract the new year's data.
+        5. Return ONLY the merged/updated JSON object.
       `;
 
             const response = await groq.chat.completions.create({
@@ -127,16 +131,33 @@ export class PolicyService {
             });
 
             const updatedJson = JSON.parse(response.choices[0]?.message?.content || '{}');
+            let year = undefined;
 
-            // Use year-specific filename for holidays if applicable
+            // Handling Holidays Year-Specific Merging
             if (policyType.toLowerCase() === 'holiday' && updatedJson.year) {
-                fileName = `holidays_${updatedJson.year}.json`;
+                year = updatedJson.year;
+                // Check if holiday policy for this year already exists in Salesforce
+                const existingYearData = await this.salesforceService.getPolicy('Holiday', year);
+
+                if (existingYearData && existingYearData.holidays && Array.isArray(existingYearData.holidays)) {
+                    // Merge arrays
+                    const newHolidays = updatedJson.holidays || [];
+                    const mergedHolidays = [...existingYearData.holidays, ...newHolidays];
+                    // Deduplicate
+                    const unique = Array.from(new Map(mergedHolidays.map((h: any) => [`${h.date}-${h.name}`, h])).values());
+                    updatedJson.holidays = unique;
+                    console.log(`🔹 Merged with existing Holiday policy for year ${year}.`);
+                }
             }
 
-            const filePath = path.join(this.dataDir, fileName);
-            fs.writeFileSync(filePath, JSON.stringify(updatedJson, null, 2));
+            // Save to Salesforce
+            const saveResult = await this.salesforceService.savePolicy(policyType, updatedJson, year);
 
-            return { success: true, message: `Successfully updated ${policyType} policy.` };
+            if (!saveResult.success) {
+                return { success: false, message: `Failed to save policy to Salesforce: ${saveResult.message}` };
+            }
+
+            return { success: true, message: `Successfully updated ${policyType} policy in Salesforce.` };
 
         } catch (error) {
             console.error('Error updating policy:', error);
@@ -144,56 +165,54 @@ export class PolicyService {
         }
     }
 
-    static getPolicy(fileName: string): any {
-        const filePath = path.join(this.dataDir, fileName);
-        try {
-            if (fs.existsSync(filePath)) {
-                return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    static async getPolicy(fileNameOrType: string): Promise<any> {
+        // Map filename/type to Salesforce policy lookup
+        let policyType = '';
+        let year: number | undefined = undefined;
+
+        const lowerName = fileNameOrType.toLowerCase();
+
+        if (lowerName === 'leavepolicy.json' || lowerName === 'leave') policyType = 'Leave';
+        else if (lowerName === 'wfhpolicy.json' || lowerName === 'wfh') policyType = 'WFH';
+        else if (lowerName === 'reimbursement-policy.json' || lowerName === 'reimbursement') policyType = 'Reimbursement';
+        else if (lowerName === 'holidays.json' || lowerName === 'holiday') {
+            // Special case: "holidays.json" usually implies "all holidays" or "current year"
+            return await this.getAllHolidays();
+        }
+        else if (lowerName.startsWith('holidays_')) {
+            // e.g. holidays_2026.json
+            const match = lowerName.match(/holidays_(\d+)/);
+            if (match) {
+                policyType = 'Holiday';
+                year = parseInt(match[1]);
             }
-        } catch (error) {
-            console.error(`Error loading policy ${fileName}:`, error);
         }
-        // Fallback for holidays if specific file not found
-        if (fileName === 'holidays.json') {
-            return this.getAllHolidays();
+
+        if (policyType) {
+            const data = await this.salesforceService.getPolicy(policyType, year);
+            return data || {}; // Return empty object if not found to match previous behavior
         }
+
         return {};
     }
 
-    static getAllHolidays(): any {
+    static async getAllHolidays(): Promise<any> {
         try {
-            const files = fs.readdirSync(this.dataDir);
-            const holidayFiles = files.filter(f => f.startsWith('holidays') && f.endsWith('.json'));
+            const allpolicies = await this.salesforceService.getAllHolidayPolicies();
 
             let allHolidays: any[] = [];
-            let latestYear = 0;
 
-            holidayFiles.forEach(file => {
-                try {
-                    const data = JSON.parse(fs.readFileSync(path.join(this.dataDir, file), 'utf8'));
-                    if (data.holidays) {
-                        allHolidays = allHolidays.concat(data.holidays);
-                    }
-                    if (data.year > latestYear) {
-                        latestYear = data.year;
-                    }
-                } catch (e) {
-                    console.error(`Error reading holiday file ${file}:`, e);
+            allpolicies.forEach(data => {
+                if (data.holidays) {
+                    allHolidays = allHolidays.concat(data.holidays);
                 }
             });
 
             // Remove duplicates (unique by date and name)
             const uniqueHolidays = Array.from(new Map(allHolidays.map(h => [`${h.date}-${h.name}`, h])).values());
 
-            const currentYear = new Date().getFullYear();
-            const currentYearHolidays = uniqueHolidays.filter(h => {
-                const hDate = new Date(h.date);
-                return !isNaN(hDate.getTime()) && hDate.getFullYear() === currentYear;
-            });
-
             return {
-                year: currentYear,
-                holidays: currentYearHolidays.sort((a, b) => a.date.localeCompare(b.date))
+                holidays: uniqueHolidays.sort((a: any, b: any) => a.date.localeCompare(b.date))
             };
         } catch (error) {
             console.error('Error getting all holidays:', error);

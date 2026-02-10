@@ -129,7 +129,122 @@ app.get('/approve', async (req: Request, res: Response) => {
       `);
     }
 
-    // Get the record
+    // Import services
+    const { pendingApprovalService } = await import('./services/pendingApprovalService');
+    const { emailService } = await import('./services/emailService');
+
+    // Check if this is a pending request (not yet in Salesforce)
+    const pendingRequest = pendingApprovalService.get(id as string);
+
+    if (pendingRequest) {
+      // This is a pending request - handle email-first approval
+      if (action === 'approve') {
+        // CREATE Salesforce record
+        const result = await salesforceService.createLeaveRecord({
+          employeeName: pendingRequest.employeeName,
+          employeeEmail: pendingRequest.employeeEmail,
+          employeeId: pendingRequest.employeeId,
+          leaveType: pendingRequest.leaveType,
+          startDate: pendingRequest.startDate,
+          endDate: pendingRequest.endDate,
+          reason: pendingRequest.reason,
+          durationDays: pendingRequest.durationDays,
+          isException: pendingRequest.isException
+        });
+
+        if (!result.success) {
+          throw new Error(result.message || 'Failed to create Salesforce record');
+        }
+
+        // Remove from pending
+        pendingApprovalService.remove(id as string);
+
+        // Send notification to employee
+        if (pendingRequest.employeeEmail) {
+          await emailService.sendDecisionEmail(
+            pendingRequest.employeeEmail,
+            pendingRequest.employeeName,
+            true,
+            pendingRequest.leaveType,
+            pendingRequest.startDate,
+            pendingRequest.endDate
+          );
+        }
+
+        return res.send(`
+          <html>
+            <head>
+              <title>Leave Approved</title>
+              <style>
+                body { font-family: Arial; padding: 40px; max-width: 600px; margin: 0 auto; }
+                .success { background: #4CAF50; color: white; padding: 20px; border-radius: 8px; }
+                .details { background: #f9f9f9; padding: 20px; margin: 20px 0; border-radius: 8px; }
+              </style>
+            </head>
+            <body>
+              <div class="success">
+                <h1>✅ Leave Request Approved!</h1>
+              </div>
+              <div class="details">
+                <h3>The leave request has been successfully approved and created in Salesforce.</h3>
+                <p><strong>Employee:</strong> ${pendingRequest.employeeName}</p>
+                <p><strong>Leave Type:</strong> ${pendingRequest.leaveType}</p>
+                <p><strong>Start Date:</strong> ${pendingRequest.startDate}</p>
+                <p><strong>End Date:</strong> ${pendingRequest.endDate}</p>
+                <p><strong>Duration:</strong> ${pendingRequest.durationDays} days</p>
+                <p><strong>Salesforce Record ID:</strong> ${result.id}</p>
+              </div>
+              <p>The employee has been notified via email about this approval.</p>
+            </body>
+          </html>
+        `);
+      } else if (action === 'reject') {
+        // Just remove from pending, don't create record
+        pendingApprovalService.remove(id as string);
+
+        // Send notification to employee
+        if (pendingRequest.employeeEmail) {
+          await emailService.sendDecisionEmail(
+            pendingRequest.employeeEmail,
+            pendingRequest.employeeName,
+            false,
+            pendingRequest.leaveType,
+            pendingRequest.startDate,
+            pendingRequest.endDate
+          );
+        }
+
+        return res.send(`
+          <html>
+            <head>
+              <title>Leave Rejected</title>
+              <style>
+                body { font-family: Arial; padding: 40px; max-width: 600px; margin: 0 auto; }
+                .reject { background: #f44336; color: white; padding: 20px; border-radius: 8px; }
+                .details { background: #f9f9f9; padding: 20px; margin: 20px 0; border-radius: 8px; }
+              </style>
+            </head>
+            <body>
+              <div class="reject">
+                <h1>❌ Leave Request Rejected</h1>
+              </div>
+              <div class="details">
+                <h3>Leave Details:</h3>
+                <p><strong>Employee:</strong> ${pendingRequest.employeeName}</p>
+                <p><strong>Leave Type:</strong> ${pendingRequest.leaveType}</p>
+                <p><strong>Start Date:</strong> ${pendingRequest.startDate}</p>
+                <p><strong>End Date:</strong> ${pendingRequest.endDate}</p>
+                <p><strong>Status:</strong> <span style="color: red;">Rejected</span></p>
+              </div>
+              <p>The employee has been notified via email about this rejection.</p>
+              <p style="color: #666; font-size: 14px;">No Salesforce record was created.</p>
+            </body>
+          </html>
+        `);
+      }
+    }
+
+    // If not a pending request, handle as existing Salesforce record
     const record = await salesforceService.getRecord(id as string);
 
     if (!record.success) {
@@ -274,6 +389,70 @@ app.get('/', (req: Request, res: Response) => {
 
 // Manager dashboard routes
 app.use('/api/manager', managerRoutes);
+
+// Test endpoint for pending approvals (development only)
+app.post('/api/test/pending-approval', async (req: Request, res: Response) => {
+  try {
+    const { pendingApprovalService } = await import('./services/pendingApprovalService');
+    const { emailService } = await import('./services/emailService');
+
+    const {
+      employeeName,
+      employeeEmail,
+      leaveType,
+      startDate,
+      endDate,
+      reason,
+      durationDays,
+      managerEmail
+    } = req.body;
+
+    // Store pending request
+    const requestId = pendingApprovalService.store({
+      employeeName,
+      employeeEmail,
+      employeeId: null,
+      leaveType,
+      startDate,
+      endDate,
+      reason,
+      durationDays,
+      isException: true
+    });
+
+    // Generate approval URLs
+    const appUrl = process.env.APP_URL || 'http://localhost:5001';
+    const approveUrl = `${appUrl}/approve?id=${requestId}&action=approve&token=${requestId}`;
+    const rejectUrl = `${appUrl}/approve?id=${requestId}&action=reject&token=${requestId}`;
+
+    // Send approval email
+    await emailService.sendApprovalEmail({
+      to: managerEmail,
+      employeeName,
+      leaveType,
+      startDate,
+      endDate,
+      reason,
+      durationDays,
+      approveUrl,
+      rejectUrl
+    });
+
+    res.json({
+      success: true,
+      message: 'Pending approval created and email sent',
+      requestId,
+      approveUrl,
+      rejectUrl
+    });
+  } catch (error: any) {
+    console.error('Test endpoint error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
 
 // 404 handler
 app.use((req: Request, res: Response) => {

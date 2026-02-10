@@ -1,49 +1,49 @@
 {
-  "companyName": "Not specified",
-  "effectiveDate": "2027-01-01",
+  "companyName": "Winfomi Technologies",
+  "effectiveDate": "Not specified",
   "leaveTypes": {
     "annual": {
-      "name": "Annual Leave",
-      "entitlement": 0,
-      "accrualRate": "Not specified",
-      "carryForward": "Not specified",
-      "encashment": "Not specified"
+      "name": "Earned / Privilege Leave",
+      "entitlement": 18,
+      "accrualRate": "1.5 days per month",
+      "carryForward": "Up to 45 days",
+      "encashment": "As per company policy and applicable labor laws"
     },
     "sick": {
       "name": "Sick Leave",
-      "entitlement": 0,
-      "documentation": "Not specified",
-      "carryForward": "Not specified"
+      "entitlement": 12,
+      "documentation": "Medical certificate may be required for leave exceeding 2 consecutive days",
+      "carryForward": "Up to a maximum limit as defined by management"
     },
     "casual": {
       "name": "Casual Leave",
-      "entitlement": 0,
+      "entitlement": 12,
       "minimumNotice": "Not specified",
-      "restrictions": "Not specified"
+      "restrictions": "Maximum of 2 consecutive days can be taken as CL"
     },
     "maternity": {
       "name": "Maternity Leave",
-      "entitlement": 0,
-      "eligibility": "Not specified",
-      "benefits": "Not specified"
+      "entitlement": 26,
+      "eligibility": "As per the Maternity Benefit Act, 1961 (India)",
+      "benefits": "Up to 26 weeks of paid maternity leave"
     },
     "paternity": {
       "name": "Paternity Leave",
-      "entitlement": 0,
-      "eligibility": "Not specified",
-      "timeframe": "Not specified"
+      "entitlement": 5,
+      "eligibility": "Male employees",
+      "timeframe": "Within 30 days of childbirth"
     }
   },
   "applicationProcess": {
-    "advance": "Not specified",
+    "advance": "Leave requests must be applied through the prescribed leave management system or via email (if applicable)",
     "emergency": "Not specified",
-    "approval": "Not specified",
-    "documentation": "Not specified"
+    "approval": "Subject to reporting manager approval and project requirements",
+    "documentation": "Medical certificate may be required for sick leave exceeding 2 consecutive days"
   },
   "policies": {
     "probation": "Not specified",
     "sandwich": "Not specified",
     "halfDay": "Not specified",
-    "compensation": "Not specified"
+    "compensation": "Comp-Off may be granted if an employee works on a weekly off or declared holiday"
   }
 }

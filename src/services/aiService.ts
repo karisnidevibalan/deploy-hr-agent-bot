@@ -26,13 +26,15 @@ export type IntentResult = {
 };
 
 export class AiService {
-  private buildSystemPrompt(conversationContext?: string): string {
+  private async buildSystemPrompt(conversationContext?: string): Promise<string> {
     const contextInfo = conversationContext ? `\n\nConversation Context:\n${conversationContext}` : '';
 
-    const leavePolicy = PolicyService.getPolicy('leavePolicy.json');
-    const holidays = PolicyService.getAllHolidays();
-    const wfhPolicy = PolicyService.getPolicy('wfhPolicy.json');
-    const reimbursementPolicy = PolicyService.getPolicy('reimbursement-policy.json');
+    const [leavePolicy, holidays, wfhPolicy, reimbursementPolicy] = await Promise.all([
+      PolicyService.getPolicy('leavePolicy.json'),
+      PolicyService.getAllHolidays(),
+      PolicyService.getPolicy('wfhPolicy.json'),
+      PolicyService.getPolicy('reimbursement-policy.json')
+    ]);
 
     return `You are Winfomi HR Assistant, an intelligent AI-powered HR chatbot for Winfomi Technologies.
 
@@ -104,7 +106,7 @@ Provide exceptional, personalized HR support by understanding employee needs, an
         conversationContext += `\nEmployee Email: ${context.employeeEmail}`;
       }
 
-      const systemPrompt = this.buildSystemPrompt(conversationContext);
+      const systemPrompt = await this.buildSystemPrompt(conversationContext);
 
       const response = await groq.chat.completions.create({
         messages: [
@@ -301,6 +303,11 @@ Provide exceptional, personalized HR support by understanding employee needs, an
             sunday.setDate(sunday.getDate() + 7);
             entities.startDate = fmt(monday);
             entities.endDate = fmt(sunday);
+          } else {
+            // Default to this week if they just say "holiday this week" or similar
+            entities.period = 'this_week';
+            entities.startDate = fmt(monday);
+            entities.endDate = fmt(sunday);
           }
         }
       }
@@ -356,6 +363,7 @@ System Intents:
 - leave_policy: Questions about leave policies
 - wfh_policy: Questions about WFH policies
 - reimbursement_info: Questions about reimbursements
+- edit: User explicitly wants to update a request they just saw or are making
 - view_requests: See existing leave/WFH requests
 - general_query: General HR question
 - greeting: Simple greeting or small talk
@@ -366,7 +374,9 @@ Respond in JSON ONLY:
     "confidence": <0.0-1.0>,
     "entities": {"date": "YYYY-MM-DD", "startDate": "YYYY-MM-DD", "endDate": "YYYY-MM-DD", "leaveType": "ANNUAL|SICK|CASUAL", "reason": "...", "year": 2026},
     "suggestedActions": ["action1", "action2"]
-}`;
+}
+If the user says "edit" without context, use "edit" intent.
+`;
 
       const response = await groq.chat.completions.create({
         messages: [{ role: "user", content: prompt }],
