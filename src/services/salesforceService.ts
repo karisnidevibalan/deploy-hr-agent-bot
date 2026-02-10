@@ -129,9 +129,9 @@ export class SalesforceService {
         console.log('🔧 Salesforce Service initialized in', this.demoMode ? 'DEMO MODE' : 'LIVE MODE');
 
         this.mockLeaveBalances = {
-            'ANNUAL': { total: 21, used: 0 },
-            'CASUAL': { total: 12, used: 0 },
-            'SICK': { total: 12, used: 0 },
+            'ANNUAL': { total: 50, used: 0 },
+            'CASUAL': { total: 50, used: 0 },
+            'SICK': { total: 50, used: 0 },
             'MATERNITY': { total: 180, used: 0 },
             'PATERNITY': { total: 15, used: 0 }
         };
