@@ -227,7 +227,9 @@ export class SalesforceService {
                 if (Number.isNaN(parsed.getTime())) return d;
                 return parsed.toISOString().split('T')[0];
             };
-            const employeeId = leaveData.employeeId || (leaveData.employeeEmail ? await this.lookupUserIdByEmail(leaveData.employeeEmail) : null);
+            const userResult = await this.lookupUserDataByEmail(leaveData.employeeEmail);
+            const employeeId = leaveData.employeeId || userResult?.id || null;
+            const managerId = userResult?.managerId || null;
 
             const recordData: any = {
                 Employee__c: employeeId,
@@ -239,6 +241,7 @@ export class SalesforceService {
                 Reason__c: leaveData.isException ? `[EXCEPTION] ${leaveData.reason || ''}`.trim() : leaveData.reason,
                 Status__c: 'Pending',
                 Request_Source__c: 'Chatbot',
+                Manager__c: managerId,
                 Is_Exception__c: leaveData.isException || false,
                 Send_Email_Notification__c: true // Always trigger the Salesforce Flow
                 // Total_Days__c is a formula field that auto-calculates from dates
@@ -400,7 +403,9 @@ export class SalesforceService {
                 throw new Error('Invalid WFH date provided');
             }
 
-            const employeeId = await this.lookupUserIdByEmail(wfhData.employeeEmail);
+            const userResult = await this.lookupUserDataByEmail(wfhData.employeeEmail);
+            const employeeId = userResult?.id || null;
+            const managerId = userResult?.managerId || null;
 
             const recordData: any = {
                 Name: this.buildWfhRecordName(wfhData.employeeName, normalizedDate),
@@ -408,6 +413,7 @@ export class SalesforceService {
                 Status__c: 'Pending Approval',
                 Manager_approval__c: false,
                 Is_Exception__c: wfhData.isException || false,
+                Manager__c: managerId,
                 Send_Email_Notification__c: true // Always trigger the Salesforce Flow
             };
 
@@ -954,18 +960,29 @@ export class SalesforceService {
         return `WFH - ${trimmedName} - ${isoDate}`;
     }
 
-    private async lookupUserIdByEmail(email?: string | null): Promise<string | null> {
+    private async lookupUserDataByEmail(email?: string | null): Promise<{ id: string; managerId: string | null } | null> {
         if (!email || this.demoMode || !this.conn) {
             return null;
         }
 
         try {
-            const user = await this.conn.sobject('User').findOne({ Email: email }, ['Id']);
-            return user?.Id || null;
+            const user = await this.conn.sobject('User').findOne({ Email: email }, ['Id', 'ManagerId']);
+            if (user) {
+                return {
+                    id: user.Id,
+                    managerId: user.ManagerId || null
+                };
+            }
+            return null;
         } catch (error: any) {
             console.warn(`⚠️ Unable to resolve Salesforce User for email ${email}:`, error?.message || error);
             return null;
         }
+    }
+
+    private async lookupUserIdByEmail(email?: string | null): Promise<string | null> {
+        const data = await this.lookupUserDataByEmail(email);
+        return data?.id || null;
     }
 
     private isMissingRecordError(error: any): boolean {
