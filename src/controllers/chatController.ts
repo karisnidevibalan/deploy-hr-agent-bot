@@ -37,7 +37,7 @@ async function listRequests(
 ): Promise<void> {
   try {
     const employeeName = context.finalName || contextManager.getEmployeeName(sessionId) || DEFAULT_EMPLOYEE_NAME;
-    const employeeEmail = context.finalEmail || contextManager.getEmployeeEmail(sessionId) || '';
+    const employeeEmail = context.finalEmail || contextManager.getEmployeeEmail(sessionId) || DEFAULT_EMPLOYEE_EMAIL;
 
     let leaveRequests = [];
     let wfhRequests = [];
@@ -126,6 +126,7 @@ import { PolicyService } from '../services/policyService';
 const salesforceService = new SalesforceService();
 const aiService = new AiService();
 const DEFAULT_EMPLOYEE_NAME = 'Current User';
+const DEFAULT_EMPLOYEE_EMAIL = 'karisnid.23cse@kongu.edu';
 
 // Helper to extract leave type using entityExtractor
 function extractLeaveType(message: string): string | null {
@@ -781,7 +782,7 @@ const chatController = async (req: Request, res: Response) => {
 
   const { editDetails, employeeEmail: bodyEmail, employeeName: bodyName, confirmationAction, intentOverride, pendingRequest: pendingFromClient } = body;
 
-  const finalEmail = ssoEmail || bodyEmail || contextManager.getEmployeeEmail(sessionId);
+  const finalEmail = ssoEmail || bodyEmail || contextManager.getEmployeeEmail(sessionId) || DEFAULT_EMPLOYEE_EMAIL;
   const finalName = ssoName || bodyName || contextManager.getEmployeeName(sessionId) || DEFAULT_EMPLOYEE_NAME;
 
   // Update Persistent Context
