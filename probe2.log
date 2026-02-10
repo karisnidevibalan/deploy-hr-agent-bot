@@ -1,0 +1,3 @@
+PDFParse Type: function
+Attempting lib.PDFParse(buffer)...
+Error calling PDFParse: TypeError: Class constructors cannot be invoked without 'new'

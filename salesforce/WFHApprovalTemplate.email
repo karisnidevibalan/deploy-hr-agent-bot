@@ -1,0 +1,132 @@
+<messaging:emailTemplate subject="⚠️ Exception WFH Request - {!relatedTo.Employee_Name__c}" recipientType="User" relatedToType="WFH__c">
+<messaging:htmlEmailBody >
+<html>
+<head>
+  <style type="text/css">
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      color: #333;
+      line-height: 1.6;
+    }
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    .header {
+      font-size: 24px;
+      font-weight: 600;
+      color: #1a1a1a;
+      margin-top: 0;
+      margin-bottom: 24px;
+    }
+    .details-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 32px;
+    }
+    .details-table td {
+      padding: 12px 0;
+      font-size: 16px;
+    }
+    .label {
+      width: 120px;
+      font-weight: 600;
+      vertical-align: top;
+    }
+    .actions {
+      margin-bottom: 32px;
+    }
+    .btn {
+      display: inline-block;
+      padding: 12px 24px;
+      text-decoration: none;
+      border-radius: 6px;
+      font-weight: 600;
+      font-size: 16px;
+      text-align: center;
+      color: white !important;
+    }
+    .btn-approve {
+      background-color: #28a745;
+    }
+    .btn-reject {
+      background-color: #dc3545;
+      margin-left: 12px;
+    }
+    .footer {
+      font-size: 16px;
+      color: #666;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1 class="header">WFH Request Pending Approval</h1>
+    
+    <p>Hello,</p>
+    <p>You have a new WFH request pending your approval.</p>
+    
+    <table class="details-table">
+      <tr>
+        <td class="label">Employee:</td>
+        <td>{!relatedTo.Employee_Name__c}</td>
+      </tr>
+      <tr>
+        <td class="label">Leave Type:</td>
+        <td>Work From Home</td>
+      </tr>
+      <tr>
+        <td class="label">Date:</td>
+        <td>
+          <apex:outputText value="{0,date,MM/dd/yyyy}">
+            <apex:param value="{!relatedTo.Date__c}" />
+          </apex:outputText>
+        </td>
+      </tr>
+      <tr>
+        <td class="label">Reason:</td>
+        <td>{!relatedTo.Reason__c}</td>
+      </tr>
+    </table>
+    
+    <div class="actions">
+      <a href="https://hr-agent-bot.vercel.app/approve?id={!relatedTo.Id}&action=approve&token={!relatedTo.Id}" class="btn btn-approve">
+        ✅ APPROVE
+      </a>
+      <a href="https://hr-agent-bot.vercel.app/approve?id={!relatedTo.Id}&action=reject&token={!relatedTo.Id}" class="btn btn-reject">
+        ❌ REJECT
+      </a>
+    </div>
+    
+    <p style="font-style: italic; color: #666;">Click the button above to approve or reject this WFH request instantly.</p>
+    
+    <p>
+      Or view in Salesforce: <a href="{!LEFT($Api.Partner_Server_URL_580, FIND('/services', $Api.Partner_Server_URL_580))}/{!relatedTo.Id}" style="color: #007bff;">{!relatedTo.Name}</a>
+    </p>
+    
+    <p class="footer">
+      Thank you,<br/>
+      <strong>HR Team</strong>
+    </p>
+  </div>
+</body>
+</html>
+</messaging:htmlEmailBody>
+
+<messaging:plainTextEmailBody >
+Hello,
+
+You have a new WFH request pending your approval.
+
+Employee: {!relatedTo.Employee_Name__c}
+Date: {!relatedTo.Date__c}
+Reason: {!relatedTo.Reason__c}
+
+To approve: https://hr-agent-bot.vercel.app/approve?id={!relatedTo.Id}&action=approve&token={!relatedTo.Id}
+To reject: https://hr-agent-bot.vercel.app/approve?id={!relatedTo.Id}&action=reject&token={!relatedTo.Id}
+
+Thank you,
+HR Team
+</messaging:plainTextEmailBody>
+</messaging:emailTemplate>

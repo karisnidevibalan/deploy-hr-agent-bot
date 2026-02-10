@@ -429,6 +429,15 @@ async function processLeaveRequest(
     }
   }
 
+  // Check for email before creating any Salesforce record
+  if (!employeeEmail) {
+    return {
+      success: false,
+      isEmailMissing: true,
+      message: '⚠️ **Email Required**\n\nI couldn\'t find your email address. I need it to resolve your manager and Employee ID in Salesforce.\n\nPlease type: **"My email is [your-email]"** and then try again.'
+    };
+  }
+
   const payload = {
     employeeName,
     employeeEmail,
@@ -787,6 +796,9 @@ const chatController = async (req: Request, res: Response) => {
   // Update Persistent Context
   if (finalEmail) contextManager.setUserEmail(sessionId, finalEmail);
   if (finalName && finalName !== DEFAULT_EMPLOYEE_NAME) contextManager.updateContext(sessionId, { employeeName: finalName });
+
+  console.log(`👤 Active Context [${sessionId}]: Name: ${finalName}, Email: ${finalEmail || 'None'}`);
+  if (req.headers['x-user-email']) console.log(`📡 SSO Header: ${req.headers['x-user-email']}`);
 
   // 2. Short-circuit: If awaiting request type clarification
   if (contextManager.getContext(sessionId).awaitingRequestTypeClarification) {
@@ -1249,6 +1261,20 @@ const chatController = async (req: Request, res: Response) => {
             `• Information on **Company Policies**\n\n` +
             `How can I help you today?`,
           intent: 'greeting',
+          timestamp: new Date().toISOString()
+        });
+      }
+
+      case 'status_check': {
+        const email = contextManager.getEmployeeEmail(sessionId);
+        const name = contextManager.getEmployeeName(sessionId);
+        return res.json({
+          reply: `📋 **Bot System Status**\n\n` +
+            `• **Name**: ${name || 'Unknown'}\n` +
+            `• **Email**: ${email || 'Not Linked'}\n` +
+            `• **Session ID**: \`${sessionId}\`\n\n` +
+            (email ? `✅ You are identified and ready for Salesforce requests.` : `⚠️ Your email is missing. Please type "My email is..." to link your profile.`),
+          intent: 'status_check',
           timestamp: new Date().toISOString()
         });
       }

@@ -1,0 +1,17 @@
+﻿≡ƒÜÇ Starting Exception Flow Verification (with email)...
+
+--- Step 1: Initial request (Casual leave 30 days) ---
+Bot Response 1: Please review and complete your leave request details below:
+
+--- Step 2: Submitting form (should trigger balance check) ---
+Bot Response 2: ΓÜá∩╕Å **Insufficient Balance**
+
+You don't have enough leave to proceed further.
+
+ΓÇó Requested: 22 days
+ΓÇó Available: 0 days
+
+Would you like me to send this as a special exception request for your manager to review? If approved, it will be stored in Salesforce.
+Γ£à Correct: Insufficient balance detected.
+
+--- Step 3: Confirming Exception Request ("yes") ---
